@@ -1,0 +1,143 @@
+# AGENTS.md — Charta permanent rulebook
+
+> Any AI agent working in this repo must follow this file. It overrides
+> convenience. When in doubt, choose safety + demoability + tests.
+
+## 1. Project summary
+
+Charta is a "magical folder" — Windows-first, local-first.
+User right-clicks any folder in Explorer → "Watch with Charta" →
+answers "What is this folder for?" (text or voice).
+A local Gemma model (via Ollama) turns that answer into a FOLDER CHARTER
+stored at `.charta/charter.md` (Markdown + YAML front-matter, human-editable).
+From then on the folder understands itself: reads new files, proposes
+organization, produces purpose-specific output, detects missing items,
+answers questions in plain language with citations.
+
+Core principle: everything runs locally with open-weight models through
+Ollama. No cloud calls. AI memory is a human-readable file the user owns.
+
+Headline features (priority order):
+1. Folder Charter: create from text/voice, edit, preset templates
+   (Student, Freelancer receipts/invoices, Data Entry).
+2. Purpose-driven output: receipts spreadsheet (xlsx+csv), study notes +
+   flashcards (md+csv), data-entry table.
+3. Gap detection: "lecture 7 missing", "no electricity bill for March".
+4. Ask the folder: NL Q&A with citations (file + page).
+5. Right-click Explorer integration + voice input.
+6. If time remains: learn from corrections, sensitive-file guard,
+   weekly digest, deadline timeline.
+
+## 2. Tech stack
+
+- Language: Python 3.11+ (Windows-first, core stays cross-platform).
+- Model runtime: Ollama at `http://localhost:11434`.
+  - Generation: Gemma vision-capable model (4B-class preferred),
+    configurable via `config.toml`, never hard-coded.
+  - Embeddings: configurable (e.g. `nomic-embed-text` or `embeddinggemma`).
+- File watching: `watchdog`.
+- PDF text: `PyMuPDF`. Scanned PDFs/screenshots: Gemma vision; fallback RapidOCR.
+  Extractor behind one interface (`charta.core.extract`).
+- Storage: SQLite at `.charta/index.db` per folder; embeddings as blobs,
+  cosine similarity in numpy. No external vector DB.
+- Spreadsheets: `openpyxl`.
+- STT: `faster-whisper` locally (small by default) behind `charta.voice.stt`
+  interface. ElevenLabs optional, opt-in, clearly labeled cloud.
+- Backend+UI: FastAPI serving local web UI at `http://127.0.0.1:PORT`
+  (plain HTML/CSS/vanilla JS, no heavy build).
+  CLI and UI call the same core library.
+- CLI: `charta` (typer/argparse): `watch, unwatch, status, proposals,
+  approve, undo, ask, charter, serve, install-shell, uninstall-shell`.
+- Shell: HKCU registry `...Directory\shell\Charta` and
+  `...Directory\Background\shell\Charta`, `%1` / `%V`.
+- Tests: pytest + fixtures with small sample files.
+
+## 3. Folder structure
+
+```text
+charta/
+  core/ (charter.py, watcher.py, extract/, classify.py, proposals.py,
+         mover.py, journal.py, outputs/, gaps.py, ask.py,
+         sensitive.py, llm.py, config.py)
+  voice/ (stt.py)
+  web/ (app.py, static/ incl. tokens.css, fonts/, icons)
+  cli.py
+  shell/ (windows_registry.py)
+tests/
+samples/ (generated demo data for the 3 presets)
+eval/
+docs/screenshots/
+AGENTS.md
+STATUS.md
+DESIGN.md
+README.md
+config.toml
+```
+
+Any UI change must follow DESIGN.md.
+
+## 4. Coding rules
+
+- Type hints on all public functions. Keep modules small (<300 lines
+  preferred); split if larger.
+- Tests for every feature: at least one pytest per new core function.
+- No network calls except to local Ollama (`localhost:11434`) and the
+  local FastAPI UI. No telemetry, no CDN (fonts/icons bundled locally).
+- No hard-coded paths, ports, or model names. All config in one file:
+  `config.toml` at repo root (loaded by `charta.core.config`).
+- Every AI call: timeout + 1 retry + graceful fallback message when
+  Ollama is down. Request structured JSON, validate with Pydantic;
+  on invalid JSON retry once, then log to STATUS.md Failures & Lessons.
+- Keep Windows paths working (`pathlib`), but core must pass on Linux CI.
+- `ruff`/`black`-clean if available; no dead code.
+
+## 5. SAFETY RULES (non-negotiable)
+
+- Default mode is SUGGEST: Charta creates a "proposed changes" list and moves nothing until the user approves. Auto mode is opt-in per folder.
+- NEVER delete user files. Only move or copy.
+- Every move is written to an undo journal (.charta/journal.jsonl) and can be undone with one click or one command.
+- Provide a dry-run flag for every command that changes files.
+- Never operate on system or sensitive locations: C:\Windows, Program Files, AppData, the drive root, the user profile root. Refuse with a clear message.
+- Wait until a new file is fully written (size stable for a few seconds) before reading it.
+- Never overwrite on name collision; add a numeric suffix.
+- Detect sensitive content (ID numbers, card numbers, passwords) and, by default, keep that content out of the search index and mark the file "sensitive" in the proposals.
+- Every AI decision is logged with a short human-readable reason ("moved because it is an electricity bill dated March 2026").
+
+Additional: friendly refusal screen (not error dump) for protected
+folders; no delete button anywhere in UI; dry-run flag on CLI mutators;
+sensitive content excluded from index by default.
+
+## 6. STATUS.md PROTOCOL (mandatory)
+
+- Update STATUS.md IMMEDIATELY after finishing each task. Never batch
+  updates, and never start the next task before STATUS.md reflects the
+  one just finished.
+- Also update it when you start a task (move it to "In Progress"), when
+  you get blocked, and when you make a design decision.
+- Sections of STATUS.md, in this order:
+  a. "Current Focus": one line on what is being worked on right now.
+  b. "Milestones": a checklist (M0 to M7). Tick items only when done AND tested.
+  c. "Done Log": append-only, newest first. Each entry: date-time, task name,
+     what was done, files touched, how it was verified (test name or manual
+     check), commit hash.
+  d. "In Progress": task, plan, what remains.
+  e. "Next Up": the next 3 tasks in order.
+  f. "Blockers & Open Questions".
+  g. "Decisions": each with date, the decision, and why (raw blog material).
+  h. "Failures & Lessons": things that broke, what the AI got wrong,
+     how it was fixed (blog material).
+  i. "How to Run & Test": exact commands that work right now; keep always current.
+- Keep entries factual and concise. Never delete history from the Done Log.
+- Make one git commit per completed task, and put the commit hash in the Done Log.
+- If you read STATUS.md at the start of a session and it conflicts with
+  the code, fix STATUS.md and note it.
+
+## 7. Definition of done for a task
+
+A task is DONE only when ALL are true:
+1. Code written per §§4–5 and DESIGN.md (if UI).
+2. Tests pass (`pytest -q`) — new feature has ≥1 test.
+3. STATUS.md updated per §6 (Done Log entry + milestones ticked).
+4. Committed (one commit per task, hash recorded in Done Log).
+
+Never mark M-ticks done without tests.

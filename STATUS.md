@@ -35,6 +35,7 @@ Next: the actual Windows run (66/66 green here).
 
 ## Done Log (newest first)
 
+- 2026-10-14 09:50 UTC, published to GitHub `abbasmir12/charta` over SSH; remote was empty, pushed `main` (14 commits) and set upstream; files: none (repo metadata) + this STATUS entry; verified: `git push -u origin main` exit 0, `git ls-remote origin` → `refs/heads/main 3623c74`, `git status -sb` → `## main...origin/main` (in sync); published commit 3623c74.
 - 2026-10-14 09:40 UTC, STATUS record for M6.11 (this commit); files: STATUS.md; verified: `git log -1`; commit (this).
 - 2026-10-14 09:35 UTC, M6.11 Windows-readiness hardening + doctor; files: charta/shell/native_window.py (ctypes prototypes, attribute-19 fallback, `dwm_available`, exported `ICON_PATH`), charta/shell/desktop.py (`supported_kwargs`, `window_kwargs`, TypeError retry), charta/shell/windows_registry.py (quoted/cwd-independent `right_click_command`, `_launcher`), charta/core/doctor.py (new), charta/core/config.py (`config_path`), charta/cli.py (`doctor`), docs/WINDOWS.md (new), pyproject.toml (`.native` extra), README.md, tests/test_windows_paths.py (new); verified: `pytest -q` 66 passed, `charta doctor` prints an honest report and exits 1 with no provider, printed the exact HKCU command it would write; commit 7a95670.
 - 2026-10-14 09:15 UTC, M6.10 native-feel polish + window host; files: charta/shell/native_window.py (new), charta/shell/desktop.py (new), charta/shell/windows_registry.py, charta/core/fsbrowse.py (new), charta/core/config.py, charta/cli.py (`open`, `--debug`, status line), charta/web/app.py (debug flag, favicon, /protected, /api/fs/list, charter mode + 403, dropdown/picker helpers), charta/web/static/{app.js,app.css,tokens.css}, charta/assets/charta.ico (new), tools/make_icon.py (new), config.toml, requirements.txt, README.md, DESIGN.md, AGENTS.md, tests/{test_native_window,test_fsbrowse,test_web_ui}.py (new); verified: `pytest -q` 59 passed, `eval/eval_classifier.py` 5/5, live `charta open` + curl (setup page has picker and zero `<select>`, `/api/fs/list` lists folders only, `/api/charter` on `C:\Windows` → 403, `/favicon.ico` → 19106-byte ICO, `--debug` flips `window.__CHARTA_DEBUG__` to true, status shows the window mode); commit e3523d0.
@@ -110,8 +111,9 @@ Next: the actual Windows run (66/66 green here).
 ## How to Run & Test
 
 ```bash
-cd /home/kali/projects/charta
-python3 -m pytest -q                       # 42 passed
+git clone git@github.com:abbasmir12/charta.git   # remote: git@github.com:abbasmir12/charta.git
+cd charta
+python3 -m pytest -q                       # 66 passed
 python3 eval/eval_classifier.py            # 5/5 = 100%
 
 # default provider: local Ollama

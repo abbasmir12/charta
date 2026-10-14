@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import sys
 from dataclasses import dataclass
 
 try:
@@ -34,10 +35,22 @@ PROVIDER_BASE_URLS: dict[str, str] = {
 _CLOUD_PROVIDERS = {"openai", "openrouter", "groq", "together", "deepseek"}
 
 
+def default_state_dir() -> pathlib.Path:
+    """Per-user app state (window geometry, logs). Never inside a watched folder."""
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or pathlib.Path.home()
+        return pathlib.Path(base) / "Charta"
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    return pathlib.Path(xdg) / "charta" if xdg else pathlib.Path.home() / ".config" / "charta"
+
+
 @dataclass
 class AppConfig:
     port: int = 8123
     host: str = "127.0.0.1"
+    state_dir: str = ""
+    debug: bool = False
+    mica: bool = True
     llm_provider: str = "ollama"
     llm_base_url: str = "http://localhost:11434/v1"
     llm_api_key: str = ""
@@ -78,6 +91,9 @@ class AppConfig:
         return cls(
             port=int(app.get("port", 8123)),
             host=str(app.get("host", "127.0.0.1")),
+            state_dir=os.environ.get("CHARTA_STATE_DIR", "") or str(app.get("state_dir", "")),
+            debug=bool(app.get("debug", False)) or os.environ.get("CHARTA_DEBUG", "") not in ("", "0"),
+            mica=bool(app.get("mica", True)),
             llm_provider=provider,
             llm_base_url=base_url,
             llm_api_key=api_key,
@@ -95,6 +111,11 @@ class AppConfig:
             voice_provider=str(voice.get("provider", "local")),
             whisper_model=str(voice.get("whisper_model", "small")),
         )
+
+    def state_path(self) -> pathlib.Path:
+        """Resolved state directory (configured, else per-platform default)."""
+        return (pathlib.Path(self.state_dir).expanduser() if self.state_dir
+                else default_state_dir())
 
 
 def _default_path() -> pathlib.Path:

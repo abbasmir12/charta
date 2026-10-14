@@ -1,6 +1,11 @@
 [app]
 port = 8123
 host = "127.0.0.1"
+# Per-user state (window geometry). Blank = %APPDATA%/Charta on Windows,
+# ~/.config/charta elsewhere. Never written inside a watched folder.
+state_dir = ""
+debug = false   # true (or `charta serve --debug`) keeps F5/Ctrl+R/F/P + DevTools
+mica = true     # Windows 11 Mica backdrop; falls back to a solid title bar
 
 # ---- AI provider (OpenAI-compatible API) --------------------------------
 # One code path for Ollama, LM Studio, OpenAI, OpenRouter, Groq, Together…

@@ -5,10 +5,11 @@ import asyncio
 import pathlib
 from typing import Any
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from ..core import fsbrowse
 from ..core import journal as journal_mod
 from ..core import mover as mover_mod
 from ..core import proposals as prop_store
@@ -19,8 +20,11 @@ from ..core.extract import VisionFn
 from ..core.gaps import gaps_for_folder
 from ..core.llm import LLMClient
 from ..core.outputs import build_data_entry, build_receipts, build_study
+from ..core.paths import ProtectedPathError, assert_not_protected
 
 STATIC = pathlib.Path(__file__).parent / "static"
+ASSETS = pathlib.Path(__file__).parent.parent / "assets"
+ICON = ASSETS / "charta.ico"
 app = FastAPI(title="Charta")
 if STATIC.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
@@ -40,18 +44,53 @@ def _vision(cfg: AppConfig, client: LLMClient) -> VisionFn | None:
     return client.describe_image if cfg.vision else None
 
 
+def _debug() -> bool:
+    """Debug mode (CLI --debug / CHARTA_DEBUG): re-enables the browser's own keys."""
+    return _cfg().debug
+
+
+def dropdown(name: str, options: list[tuple[str, str]], selected: str) -> str:
+    """Custom in-app dropdown (native <select> can't be themed or animated)."""
+    chosen = next((label for value, label in options if value == selected), options[0][1])
+    items = "".join(
+        f'<li role="option" data-value="{value}" aria-selected="{"true" if value == selected else "false"}"'
+        f' class="{"sel" if value == selected else ""}">{label}</li>'
+        for value, label in options)
+    return (f'<div class="dd" data-name="{name}" data-value="{selected}">'
+            f'<button type="button" class="dd-btn" aria-haspopup="listbox" aria-expanded="false">{chosen}</button>'
+            f'<ul class="dd-menu" role="listbox" hidden>{items}</ul>'
+            f'<input type="hidden" name="{name}" value="{selected}"></div>')
+
+
+def folder_picker_html() -> str:
+    """Custom folder picker modal (dirs only; protected folders flagged, not selectable)."""
+    return """<div id="fsPicker" class="picker-backdrop" hidden role="dialog" aria-modal="true" aria-label="Choose a folder">
+<div class="card picker"><div class="picker-head">
+<button type="button" class="btn btn-ghost" id="fsUp" aria-label="Parent folder">↑ Up</button>
+<span class="mono" id="fsPath" aria-live="polite">…</span></div>
+<ul id="fsList" class="picker-list" role="listbox" aria-label="Folders"></ul>
+<p id="fsNote" class="picker-note" role="status"></p>
+<div class="picker-foot"><span class="chip">No files shown — folders only</span>
+<button type="button" class="btn" onclick="closePicker()">Cancel</button>
+<button type="button" class="btn btn-primary" id="fsUse" onclick="usePickedFolder()">Use this folder</button>
+</div></div></div>"""
+
+
 def shell(page: str, folder: str, inner: str, mode: str = "suggest") -> str:
     pill = ('<span class="chip pill-suggest">Suggest mode: nothing moves without you</span>'
             if mode != "auto" else '<span class="chip pill-auto">Auto mode</span>')
     provider = _cfg().llm_provider
     privacy = ("100% local" if provider in ("ollama", "lmstudio", "llamacpp", "vllm")
                else f"cloud: {provider}")
+    debug = _debug()
     nav = "".join(
         f'<a href="/{n}?folder={folder}" class="{"active" if page==n else ""}">{icon(n)} {n.title()}</a>'
         for n in ["overview", "review", "outputs", "gaps", "ask", "activity", "settings"])
     return f"""<!doctype html><html data-theme="dark"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Charta — {page.title()}</title>
-<link rel="stylesheet" href="/static/tokens.css"><link rel="stylesheet" href="/static/app.css"></head>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="stylesheet" href="/static/tokens.css"><link rel="stylesheet" href="/static/app.css">
+<script>window.__CHARTA_DEBUG__={"true" if debug else "false"};</script></head>
 <body><div class="layout">
 <nav class="sidebar glass" aria-label="Main"><div class="mono">◈ Charta</div>
 <div class="chip"><span class="dot dot-idle"></span>{folder or 'no folder'}</div>{nav}
@@ -75,28 +114,49 @@ def icon(name: str) -> str:
 
 
 @app.get("/", response_class=HTMLResponse)
-def setup() -> str:
-    chips = "".join(f'<button class="chip" onclick="document.getElementById(\'purpose\').value={p!r}">{n}</button>'
+def setup(folder: str = "") -> str:
+    initial = folder
+    chips = "".join(f'<button type="button" class="chip" onclick="document.getElementById(\'purpose\').value={p!r}">{n}</button>'
                     for n, p in [("Student", "Lecture PDFs and study screenshots for my CS degree"),
                                  ("Freelancer", "Receipts and invoices I track for freelance taxes"),
                                  ("Data entry", "Data entry: extract name, phone, amount from each form")])
-    inner = f"""<div class="card" style="max-width:640px;margin:40px auto">
-<div class="chip mono">folder: <span id="fchip">?</span></div>
+    mode_dd = dropdown("mode", [("suggest", "Suggest mode — nothing moves without you"),
+                               ("auto", "Auto mode — move new files automatically")], "suggest")
+    inner = f"""<div class="card setup-card">
+<div class="chip mono">folder: <span id="fchip">{initial}</span>
+<button type="button" class="btn btn-ghost" onclick="openPicker()">Choose folder…</button></div>
 <h1>What is this folder for?</h1>
-<textarea id="purpose" rows="4" placeholder="Lecture PDFs and study screenshots…"></textarea>
-<div style="display:flex;gap:12px;align-items:center;margin:12px 0">
+<textarea id="purpose" rows="4" placeholder="Lecture PDFs and study screenshots…" aria-label="What is this folder for?"></textarea>
+<div class="setup-row">
 <button id="micBtn" class="mic-ring" onclick="toggleMic('purpose')" aria-label="Hold to talk">◉</button>{chips}</div>
-<input id="folder" type="text" placeholder="/path/to/folder" aria-label="Folder path">
-<button class="btn btn-primary" onclick="create()">Create charter</button>
-<div id="out"></div></div>
-<script>document.getElementById('fchip').textContent=new URLSearchParams(location.search).get('folder')||'pick below';
-async function create(){{const folder=document.getElementById('folder').value||new URLSearchParams(location.search).get('folder')||'.';
-const purpose=document.getElementById('purpose').value;
-document.getElementById('out').innerHTML='<div class=skeleton>Understanding your purpose… drafting rules… scanning…</div>';
-const r=await fetch('/api/charter?folder='+encodeURIComponent(folder),{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{purpose}})}});
-const j=await r.json();document.getElementById('out').innerHTML='<pre class=mono>'+JSON.stringify(j,null,2)+'</pre><a class=btn href=/overview?folder='+encodeURIComponent(folder)+'>Start watching →</a>';}}
-</script>"""
+<div class="setup-row"><label class="label" for="mode">Mode</label>{mode_dd}
+<input id="folder" type="text" class="manual-path" aria-label="Folder path"
+ placeholder="or paste a path" value="{initial}"></div>
+<button class="btn btn-primary" onclick="createCharter()">Create charter</button>
+<div id="out" role="status" aria-live="polite"></div></div>
+{folder_picker_html()}"""
     return shell("overview", "", inner)
+
+
+@app.get("/protected", response_class=HTMLResponse)
+def protected(folder: str = "", reason: str = "") -> str:
+    inner = f"""<div class="card refusal" role="alert">
+<div class="refusal-mark" aria-hidden="true">🛡</div>
+<h1>Charta won't watch this folder</h1>
+<p class="mono">{folder or '(no folder)'}</p>
+<p>{reason or 'It is a system or profile location — like Windows, Program Files, AppData, a drive root, or your user folder root.'}</p>
+<p>Nothing here was read, moved or changed. Pick a folder inside your documents instead —
+for example <span class="mono">Documents/Receipts</span>.</p>
+<button type="button" class="btn btn-primary" onclick="location.href='/'">Choose another folder</button>
+</div>"""
+    return shell("overview", "", inner)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    if ICON.exists():
+        return FileResponse(str(ICON), media_type="image/x-icon")
+    return Response(status_code=404)
 
 
 @app.get("/styleguide", response_class=HTMLResponse)
@@ -221,9 +281,24 @@ def settings(folder: str = "") -> str:
 @app.post("/api/charter")
 async def api_charter(folder: str, req: Request) -> JSONResponse:
     body = await req.json()
+    try:
+        assert_not_protected(folder)
+    except ProtectedPathError as e:
+        # Same non-negotiable guard as the CLI, with a friendly code for the UI.
+        return JSONResponse({"error": "protected", "message": str(e)}, status_code=403)
     ch = create_charter_from_text(str(body.get("purpose", "")), _client())
+    mode = str(body.get("mode", "")).lower()
+    if mode in ("suggest", "auto"):
+        ch.mode = mode
     save_charter(pathlib.Path(folder), ch)
-    return JSONResponse({"purpose": ch.purpose, "preset": ch.preset, "fields": ch.fields})
+    return JSONResponse({"purpose": ch.purpose, "preset": ch.preset,
+                         "fields": ch.fields, "mode": ch.mode})
+
+
+@app.get("/api/fs/list")
+def api_fs_list(path: str = "") -> JSONResponse:
+    """Directory listing for the custom folder picker (folders only)."""
+    return JSONResponse(fsbrowse.list_dirs(path or None).as_dict())
 
 
 @app.post("/api/approve")

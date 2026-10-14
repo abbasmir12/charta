@@ -102,7 +102,11 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"Journal entries: {len(journal_mod.entries(folder))}")
     cfg = AppConfig.load()
     up = LLMClient(cfg).ping()
+    from .shell.native_window import is_windows
+
     print(f"Provider: {cfg.llm_provider} @ {cfg.llm_base_url} ({cfg.generation_model})")
+    print(f"Window: {'native (Windows)' if is_windows() else 'browser fallback on this OS'}"
+          f"{' [debug]' if cfg.debug else ''}")
     print(f"AI: {'up' if up else 'DOWN — check [llm] in config.toml'}"
           + ("" if up else " (offline: heuristic fallback still works)"))
     return 0
@@ -168,11 +172,30 @@ def cmd_gaps(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
+    import os
+
     import uvicorn
 
     cfg = AppConfig.load()
+    if getattr(args, "debug", False):
+        os.environ["CHARTA_DEBUG"] = "1"  # the app reads it per request
     uvicorn.run("charta.web.app:app", host=cfg.host, port=args.port or cfg.port, log_level="info")
     return 0
+
+
+def cmd_open(args: argparse.Namespace) -> int:
+    """Native window (pywebview) or the default browser as a fallback."""
+    import os
+
+    from .shell.desktop import group_taskbar, run
+
+    cfg = AppConfig.load()
+    debug = bool(getattr(args, "debug", False)) or cfg.debug
+    if debug:
+        os.environ["CHARTA_DEBUG"] = "1"
+    group_taskbar()  # group under one taskbar entry before the window opens
+    return run(cfg.host, args.port or cfg.port, args.folder or "", debug=debug,
+               state_dir=cfg.state_path(), mica=cfg.mica)
 
 
 def cmd_shell(args: argparse.Namespace, install: bool) -> int:
@@ -204,7 +227,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("ask"); p.add_argument("--folder", default="."); p.add_argument("question", nargs="+")
     p.set_defaults(fn=lambda a: cmd_ask(argparse.Namespace(folder=a.folder, question=" ".join(a.question))))
     p = sub.add_parser("gaps"); p.add_argument("--folder", default="."); p.set_defaults(fn=cmd_gaps)
-    p = sub.add_parser("serve"); p.add_argument("--port", type=int, default=0); p.set_defaults(fn=cmd_serve)
+    p = sub.add_parser("serve"); p.add_argument("--port", type=int, default=0)
+    p.add_argument("--debug", action="store_true",
+                   help="keep browser keys (F5, Ctrl+R/F/P, DevTools) for development")
+    p.set_defaults(fn=cmd_serve)
+    p = sub.add_parser("open", help="open Charta in a native window (or your browser)")
+    p.add_argument("folder", nargs="?", default="")
+    p.add_argument("--port", type=int, default=0)
+    p.add_argument("--debug", action="store_true")
+    p.set_defaults(fn=cmd_open)
     p = sub.add_parser("install-shell"); p.set_defaults(fn=lambda a: cmd_shell(a, True))
     p = sub.add_parser("uninstall-shell"); p.set_defaults(fn=lambda a: cmd_shell(a, False))
     p = sub.add_parser("unwatch"); p.add_argument("--folder", default=".")

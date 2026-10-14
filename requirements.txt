@@ -7,3 +7,4 @@ pydantic>=2.0
 pytest>=8.0
 # optional (graceful fallback if missing):
 # PyMuPDF, python-docx, faster-whisper
+# pywebview  (native window for `charta open`; without it we open your browser)

@@ -65,12 +65,35 @@ python -m charta.cli undo --folder ./demo                      # undo one move
 # 3. gaps + questions + outputs
 python -m charta.cli gaps --folder ./demo
 python -m charta.cli ask --folder ./demo "what electricity bills for March?"
-# 4. web UI
+# 4. UI — native window (pywebview) or your browser
+python -m charta.cli open ./demo         # opens the setup window for that folder
 python -m charta.cli serve --port 8123   # → http://127.0.0.1:8123/overview?folder=./demo
 ```
 
 Right-click integration (Windows, no admin): `charta install-shell`
-(Win11: entry under *Show more options*). `charta uninstall-shell` removes it.
+(Win11: entry under *Show more options*) — it opens the **setup window** for the
+folder you clicked. `charta uninstall-shell` removes it.
+
+## Native-feel polish
+
+`charta open` is meant to feel like an app, not a tab:
+
+- **Dark title bar** via the DWM API (`DWMWA_USE_IMMERSIVE_DARK_MODE`) and
+  **Windows 11 Mica** (`DWMWA_SYSTEMBACKDROP_TYPE`), with a solid title-bar color
+  fallback when Mica is unavailable (`[app] mica = false` disables the attempt).
+- **AppUserModelID** + a real **multi-size `.ico`** (16→256 px) for the title bar,
+  alt-tab, taskbar and Explorer entry — regenerate it any time with
+  `python3 tools/make_icon.py`.
+- **Remembered window geometry** (`%APPDATA%/Charta/window.json`), guarded against
+  off-screen or unusable sizes.
+- Browser chrome is taken away: no context menu, and F5 / Ctrl+R / Ctrl+F / Ctrl+P /
+  F12 / DevTools are swallowed. `charta open --debug` (or `--debug` on `serve`)
+  gives them all back for development.
+- `user-select: none` on app chrome (only content is selectable),
+  `overscroll-behavior: none`, and thin themed scrollbars.
+- Custom in-app dropdowns and a custom **folder picker** (folders only, keyboard
+  navigable) instead of native `<select>` and a raw path box. Protected locations
+  stay visible but can't be picked — you get a friendly refusal screen, not an error dump.
 
 ## What works now
 
@@ -84,12 +107,17 @@ Right-click integration (Windows, no admin): `charta install-shell`
 - Receipts xlsx+csv, study notes+flashcards, data-entry table
 - Gap detection, ask-with-citations (refuses to invent), sensitive-file guard
 - Web UI (setup/overview/review/outputs/gaps/ask/activity/settings/styleguide), SSE live strip, voice hook (Web Speech in browser, faster-whisper in CLI)
+- Native window with dark title bar, Mica + solid fallback, taskbar icon/grouping, remembered geometry, custom dropdowns and folder picker (see *Native-feel polish*)
+- Protected folders are refused everywhere, including the web API (friendly full-screen page, HTTP 403 from `/api/charter`)
 
 ## What does NOT work yet
 
 - Learned-rules-from-corrections, weekly digest, deadline timeline (M6 stretch, not started)
 - Browser screenshots for README (no Playwright run in this env yet — `docs/screenshots/` pending)
-- Windows-only paths (DWM dark titlebar, Mica, .ico/AppUserModelID, custom folder picker) — stubbed/guarded; dev ran on Linux
+- The native window (DWM dark title bar, Mica, .ico, taskbar grouping, remembered
+  geometry) is **written but unverified**: it is implemented and unit-tested as a
+  guarded no-op, but no one has run it on Windows yet. Browser fallback is what
+  this machine exercises. `pywebview` is optional and not installed here.
 - ElevenLabs STT (interface exists, clearly labeled cloud, off by default)
 - Vision quality depends entirely on the model you point it at (4B local Gemma is
   rough on handwriting; a bigger or cloud vision model does much better)
@@ -102,10 +130,11 @@ cloud giants (heuristic fallback covers offline), vision/OCR is the bottleneck
 (~seconds/page on iGPU), and embeddings in SQLite won't scale past ~10k files.
 For a personal folder, that's the right trade.
 
-## Performance (this machine, 2026-10-13)
+## Performance (this machine, 2026-10-14)
 
 - Heuristic classify: <0.1 ms/file; eval accuracy on 5 canonical samples: **5/5 (100%)**
-- `pytest -q`: 42 passed in ~5.5s (includes a fake OpenAI-compatible server, no provider needed)
+- `pytest -q`: 59 passed in ~7s (includes a fake OpenAI-compatible server, so no provider is needed)
+- Icon generation (`tools/make_icon.py`): 7 sizes, ~0.3 s, 19 KB — stdlib only
 - LLM timings with a live provider: TBD — record `time charta watch` on your laptop and update STATUS.md
 
 ## Layout

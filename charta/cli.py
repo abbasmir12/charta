@@ -176,10 +176,25 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     import uvicorn
 
+    from .core import applog
+    from .shell.desktop import choose_port
+
     cfg = AppConfig.load()
+    log = applog.setup(cfg)
     if getattr(args, "debug", False):
         os.environ["CHARTA_DEBUG"] = "1"  # the app reads it per request
-    uvicorn.run("charta.web.app:app", host=cfg.host, port=args.port or cfg.port, log_level="info")
+    port = args.port or cfg.port
+    if port and not getattr(args, "strict_port", False):
+        port, note = choose_port(cfg.host, port)
+        if note:
+            print(f"charta: {note}")
+            applog.get_logger("serve").info(note)
+    print(f"serving on http://{cfg.host}:{port}   log: {log}")
+    applog.write_session(cfg, pid=os.getpid(), port=port, host=cfg.host, view="serve")
+    try:
+        uvicorn.run("charta.web.app:app", host=cfg.host, port=port, log_level="info")
+    finally:
+        applog.clear_session(cfg, "server stopped")
     return 0
 
 
@@ -193,7 +208,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_open(args: argparse.Namespace) -> int:
-    """Native window (pywebview) or the default browser as a fallback."""
+    """Native window (Electron or pywebview), or the default browser as a fallback."""
     import os
 
     from .shell.desktop import group_taskbar, run
@@ -203,8 +218,20 @@ def cmd_open(args: argparse.Namespace) -> int:
     if debug:
         os.environ["CHARTA_DEBUG"] = "1"
     group_taskbar()  # group under one taskbar entry before the window opens
-    return run(cfg.host, args.port or cfg.port, args.folder or "", debug=debug,
-               state_dir=cfg.state_path(), mica=cfg.mica)
+    return run(cfg, args.folder or "", debug=debug, port=args.port or cfg.port,
+               browser_only=bool(getattr(args, "browser", False)))
+
+
+def cmd_logs(args: argparse.Namespace) -> int:
+    """Print the tail of the log file (the only evidence left after a silent exit)."""
+    from .core.applog import log_path, read_log, read_session, session_running
+
+    cfg = AppConfig.load()
+    print(f"{log_path(cfg)}\n")
+    if session_running(cfg):
+        print(f"Charta is still running: {read_session(cfg)}\n")
+    print(read_log(cfg, lines=args.lines))
+    return 0
 
 
 def cmd_shell(args: argparse.Namespace, install: bool) -> int:
@@ -239,12 +266,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("serve"); p.add_argument("--port", type=int, default=0)
     p.add_argument("--debug", action="store_true",
                    help="keep browser keys (F5, Ctrl+R/F/P, DevTools) for development")
+    p.add_argument("--strict-port", action="store_true",
+                   help="fail instead of picking another port when this one is busy")
     p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("open", help="open Charta in a native window (or your browser)")
     p.add_argument("folder", nargs="?", default="")
     p.add_argument("--port", type=int, default=0)
     p.add_argument("--debug", action="store_true")
+    p.add_argument("--browser", action="store_true", help="skip the native window, use a browser")
     p.set_defaults(fn=cmd_open)
+    p = sub.add_parser("logs", help="show the Charta log (startup, errors, exit reason)")
+    p.add_argument("--lines", type=int, default=60)
+    p.set_defaults(fn=cmd_logs)
     p = sub.add_parser("doctor", help="check this machine's Charta setup (read-only)")
     p.add_argument("--json", action="store_true")
     p.add_argument("--no-ping", action="store_true", help="skip the provider reachability check")

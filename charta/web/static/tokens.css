@@ -1,50 +1,154 @@
+/* Charta design tokens — the single source of truth (see DESIGN.md).
+   Palette is contrast-checked by tests/test_design.py (WCAG AA). */
 :root{
---bg:#0B0D12;--surface:#12151C;--raised:#181C25;--border:rgba(255,255,255,0.08);
---text:#E8EAF0;--muted:#8B93A7;
---accent1:#7C5CFF;--accent2:#22D3EE;
---success:#34D399;--warning:#FBBF24;--danger:#F87171;--info:#60A5FA;
---r-card:12px;--r-in:8px;--r-chip:999px;
+  /* surfaces */
+  --bg:#0A0C11; --surface:#11141B; --raised:#171B24; --sunken:#0D1016;
+  --border:rgba(255,255,255,0.09); --border-strong:rgba(255,255,255,0.16);
+  /* ink */
+  --text:#E9ECF3; --muted:#98A1B6; --faint:#6E7789;
+  /* brand + semantics */
+  --accent1:#7C5CFF; --accent2:#22D3EE;
+  --success:#34D399; --warning:#FBBF24; --danger:#F87171; --info:#60A5FA;
+  /* accent gradient is used sparingly: primary actions, focus, active, logo */
+  --accent-grad:linear-gradient(135deg,var(--accent1),var(--accent2));
+  --accent-soft:rgba(124,92,255,0.16);
+  /* radius */
+  --r-card:12px; --r-in:8px; --r-chip:999px; --r-xs:6px;
+  /* space scale — 4px steps, use these instead of raw numbers */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px;
+  /* type scale */
+  --fs-caption:11px; --fs-label:12px; --fs-sm:13px; --fs-body:14px;
+  --fs-subtitle:16px; --fs-title:20px; --fs-display:28px;
+  --lh-tight:1.25; --lh-body:1.5; --tracking-tight:-0.011em;
+  --font-ui:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  /* elevation */
+  --sh1:0 1px 2px rgba(0,0,0,.35);
+  --sh2:0 8px 24px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.04);
+  --sh3:0 18px 48px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.06);
+  --ring:0 0 0 3px rgba(124,92,255,.35);
+  /* motion */
+  --t-fast:150ms; --t-base:200ms; --t-slow:420ms;
+  --ease:cubic-bezier(.22,.61,.36,1);
 }
 [data-theme="light"]{
---bg:#F6F7F9;--surface:#FFFFFF;--raised:#EEF1F6;--border:rgba(10,15,30,0.10);
---text:#141824;--muted:#5B6478;
+  --bg:#F4F6FA; --surface:#FFFFFF; --raised:#EDF0F6; --sunken:#E7EAF1;
+  --border:rgba(9,14,26,0.11); --border-strong:rgba(9,14,26,0.22);
+  --text:#10141F; --muted:#5A6378; --faint:#7C8697;
+  /* Accents must be darkened for white backgrounds: the dark-theme pastels
+     (#FBBF24 etc.) only reach ~1.6:1 on white. Checked by tests/test_design.py. */
+  --accent1:#5B3FE0; --accent2:#0E7490;
+  --success:#047857; --warning:#B45309; --danger:#B91C1C; --info:#1D4ED8;
+  --accent-soft:rgba(124,92,255,0.12);
+  --sh1:0 1px 2px rgba(9,14,26,.08);
+  --sh2:0 8px 24px rgba(9,14,26,.10);
+  --sh3:0 18px 48px rgba(9,14,26,.16);
 }
+
 *{box-sizing:border-box}
+html,body{height:100%}
 html,body{overscroll-behavior:none}
-body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;margin:0}
-.mono,.mono code{font-family:"JetBrains Mono",ui-monospace,Consolas,monospace}
-a{color:var(--accent2)}
-.btn{border:1px solid var(--border);background:var(--raised);color:var(--text);border-radius:var(--r-in);padding:8px 14px;cursor:pointer;font-size:14px}
-.btn-primary{background:linear-gradient(135deg,var(--accent1),var(--accent2));border:none;color:#fff;font-weight:600}
-.btn-ghost{background:transparent}
-.btn:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent2);outline-offset:2px;box-shadow:0 0 0 4px rgba(124,92,255,.25)}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.05)}
-.chip{display:inline-flex;align-items:center;gap:6px;border-radius:var(--r-chip);padding:4px 12px;font-size:12px;border:1px solid var(--border);background:var(--raised)}
-.pill-suggest{background:rgba(52,211,153,.15);color:var(--success);border:1px solid var(--success)}
-.pill-auto{background:rgba(251,191,36,.15);color:var(--warning);border:1px solid var(--warning)}
-.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
-.dot-idle{background:var(--success)}.dot-scanning{background:var(--info)}.dot-review{background:var(--warning)}
-.skel{background:linear-gradient(90deg,var(--raised) 25%,var(--surface) 50%,var(--raised) 75%);background-size:200% 100%;animation:shimmer 1.2s infinite;border-radius:8px;min-height:16px}
-@keyframes shimmer{to{background-position:-200% 0}}
-.toast{position:fixed;right:16px;bottom:16px;background:var(--raised);border:1px solid var(--border);border-radius:12px;padding:12px 16px;z-index:99}
-table.grid{width:100%;border-collapse:collapse}table.grid th{position:sticky;top:0;background:var(--raised);text-align:left;padding:8px}table.grid td{padding:8px;border-top:1px solid var(--border)}
-.badge-sensitive{color:var(--warning);border:1px solid var(--warning);border-radius:999px;padding:2px 8px;font-size:12px}
-.conf{height:6px;background:var(--raised);border-radius:3px;overflow:hidden}.conf>span{display:block;height:100%;background:linear-gradient(90deg,var(--accent1),var(--accent2))}
-@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
-.glass{background:color-mix(in srgb,var(--surface) 80%,transparent);backdrop-filter:blur(16px)}
-@supports not (backdrop-filter:blur(1px)){.glass{background:var(--surface)}}
-/* Thin themed scrollbars (Firefox + Chromium/WebView2). */
-:root{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-corner{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px;border:2px solid transparent;background-clip:content-box}
-::-webkit-scrollbar-thumb:hover{background:var(--muted);border:2px solid transparent;background-clip:content-box}
-/* Chrome is not selectable (like a native app); content still is. */
+body{
+  margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);
+  font-size:var(--fs-body);line-height:var(--lh-body);
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4{line-height:var(--lh-tight);margin:0;font-weight:600}
+h1{font-size:var(--fs-display);letter-spacing:var(--tracking-tight)}
+h2{font-size:var(--fs-title);letter-spacing:var(--tracking-tight)}
+h3{font-size:var(--fs-subtitle);letter-spacing:-0.006em}
+h4{font-size:var(--fs-body)}
+p{margin:var(--s2) 0}
+.mono,.mono code,code,pre{font-family:var(--font-mono);font-size:var(--fs-sm)}
+a{color:var(--accent2);text-decoration:none}
+a:hover{text-decoration:underline}
+.muted{color:var(--muted)}
+.caption{font-size:var(--fs-caption);color:var(--muted);letter-spacing:.02em;text-transform:uppercase}
+
+/* buttons — 32px targets (desktop density, still comfortably clickable) */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);
+  min-height:32px;padding:0 var(--s3);font:inherit;font-size:var(--fs-sm);
+  color:var(--text);background:var(--raised);border:1px solid var(--border);
+  border-radius:var(--r-in);cursor:pointer;white-space:nowrap;
+  transition:background var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease),transform var(--t-fast) var(--ease);
+}
+.btn:hover{background:var(--sunken);border-color:var(--border-strong)}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--accent-grad);border:none;color:#fff;font-weight:600;box-shadow:var(--sh1)}
+.btn-primary:hover{filter:brightness(1.06);background:var(--accent-grad)}
+.btn-ghost{background:transparent;border-color:transparent}
+.btn-ghost:hover{background:var(--raised);border-color:var(--border)}
+.btn[disabled],.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn-icon{width:32px;padding:0}
+:focus-visible{outline:2px solid var(--accent2);outline-offset:2px;box-shadow:var(--ring);border-radius:var(--r-xs)}
+
+/* chrome text is not selectable; content is (native app behaviour) */
 body{-webkit-user-select:none;user-select:none}
 .content,.content *{-webkit-user-select:text;user-select:text}
 input,textarea,select,[contenteditable="true"]{-webkit-user-select:text;user-select:text}
-.mic-ring{width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,var(--accent1),var(--accent2));display:grid;place-items:center;color:#fff;font-size:28px;cursor:pointer;border:none}
-.mic-ring.rec{animation:pulse 1.2s infinite}
-@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(124,92,255,.5)}70%{box-shadow:0 0 0 18px rgba(124,92,255,0)}100%{box-shadow:0 0 0 0 rgba(124,92,255,0)}}
-.fadein{animation:fade .5s ease-out}@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+::selection{background:var(--accent-soft)}
+
+/* surfaces */
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);
+  padding:var(--s4);box-shadow:var(--sh2);
+}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);margin-bottom:var(--s3)}
+.card-head h2,.card-head h3{margin:0}
+.raised{background:var(--raised)}
+.glass{background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:blur(18px) saturate(140%)}
+@supports not (backdrop-filter:blur(1px)){.glass{background:var(--surface)}}
+
+/* chips, pills, badges, kbd */
+.chip{
+  display:inline-flex;align-items:center;gap:var(--s2);max-width:100%;
+  border-radius:var(--r-chip);padding:3px var(--s3);font-size:var(--fs-label);
+  border:1px solid var(--border);background:var(--raised);color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+/* A chip that is clickable needs a real hit area: WCAG 2.2 SC 2.5.8 wants
+   24x24 CSS px minimum. Verified by tools/ui_check.py. */
+button.chip{cursor:pointer;min-height:28px;padding:0 var(--s3);font:inherit;font-size:var(--fs-label);background:var(--raised);color:var(--text);transition:border-color var(--t-fast) var(--ease),background var(--t-fast) var(--ease)}
+button.chip:hover{border-color:var(--accent1);background:var(--accent-soft)}
+.pill-suggest{background:rgba(52,211,153,.14);color:var(--success);border-color:rgba(52,211,153,.45)}
+.pill-auto{background:rgba(251,191,36,.14);color:var(--warning);border-color:rgba(251,191,36,.45)}
+.badge-sensitive{color:var(--warning);border:1px solid rgba(251,191,36,.5);background:rgba(251,191,36,.12);border-radius:var(--r-chip);padding:2px var(--s2);font-size:var(--fs-caption)}
+.kbd{
+  font-family:var(--font-mono);font-size:var(--fs-caption);color:var(--muted);
+  border:1px solid var(--border);border-bottom-width:2px;border-radius:var(--r-xs);
+  padding:1px 6px;background:var(--raised);
+}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 auto}
+.dot-idle{background:var(--success)}.dot-scanning{background:var(--info)}.dot-review{background:var(--warning)}
+
+/* forms */
+input[type=text],textarea{
+  width:100%;background:var(--sunken);border:1px solid var(--border);color:var(--text);
+  border-radius:var(--r-in);padding:var(--s2) var(--s3);font:inherit;font-size:var(--fs-sm);
+  transition:border-color var(--t-fast) var(--ease),box-shadow var(--t-fast) var(--ease);
+}
+input[type=text]{min-height:36px}
+textarea{min-height:96px;resize:vertical;line-height:var(--lh-body)}
+input[type=text]:hover,textarea:hover{border-color:var(--border-strong)}
+input[type=text]:focus,textarea:focus{outline:none;border-color:var(--accent1);box-shadow:var(--ring)}
+
+/* progress + meters */
+.conf{height:6px;background:var(--raised);border-radius:3px;overflow:hidden}
+.conf>span{display:block;height:100%;background:var(--accent-grad)}
+.ring{--pct:0;width:72px;height:72px;border-radius:50%;display:grid;place-items:center;
+  background:conic-gradient(var(--accent2) calc(var(--pct)*1%),var(--raised) 0);position:relative}
+.ring::before{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--surface)}
+.ring span{position:relative;font-weight:600}
+
+/* scrollbars */
+:root{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--muted);border:2px solid transparent;background-clip:content-box}
+
+/* motion */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
+}

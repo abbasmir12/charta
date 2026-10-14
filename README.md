@@ -65,9 +65,13 @@ python -m charta.cli undo --folder ./demo                      # undo one move
 # 3. gaps + questions + outputs
 python -m charta.cli gaps --folder ./demo
 python -m charta.cli ask --folder ./demo "what electricity bills for March?"
-# 4. UI — native window (pywebview) or your browser
-python -m charta.cli open ./demo         # opens the setup window for that folder
-python -m charta.cli serve --port 8123   # → http://127.0.0.1:8123/overview?folder=./demo
+# 4. UI — Electron desktop app (recommended), pywebview, or your browser
+cd desktop && npm install && npm start   # native window, custom title bar, tray
+cd ..
+python -m charta.cli open ./demo         # pywebview window, or your browser
+python -m charta.cli serve --port 8123   # plain local server
+python -m charta.cli doctor              # why won't it start? (read-only)
+python -m charta.cli logs                # startup, errors and the exit reason
 ```
 
 Right-click integration (Windows, no admin): `charta install-shell`
@@ -78,9 +82,38 @@ folder you clicked. `charta uninstall-shell` removes it.
 readiness report (provider, icon, pywebview, DWM, shell entry, safety guard).
 Full runbook and the visual checklist: [`docs/WINDOWS.md`](docs/WINDOWS.md).
 
+## Desktop app (Electron)
+
+`desktop/` is a small Electron shell around the same local UI — no bundler, no
+transpiler, the renderer is still the FastAPI HTML. It owns the native chrome:
+
+- **Custom title bar** (`titleBarStyle: 'hidden'` + `titleBarOverlay`) that follows
+  the in-app theme toggle, plus **Windows 11 Mica** (`backgroundMaterial`).
+- **System tray**: close the window and Charta keeps watching; the tray menu opens
+  the app, jumps to Review or Ask, or quits. One taskbar entry via AppUserModelID.
+- **Remembered geometry** in the same `window.json` the CLI uses.
+- **No browser chrome**: F5 / Ctrl+R / Ctrl+F / Ctrl+P / DevTools are blocked in
+  `before-input-event` (and again in the renderer), unless `npm run debug`.
+- **Hardened by default** per Electron's security checklist: `contextIsolation`,
+  `sandbox`, `nodeIntegration: false`, a tiny `contextBridge` API, navigation and
+  `window.open` limited to local URLs (links open in your real browser).
+
+```bat
+cd desktop
+npm install
+npm start            :: run the app
+npm run debug        :: keep browser keys + DevTools
+npm test             :: unit-test the shell helpers (no display needed)
+npm run smoke         :: load every screen headlessly and fail on console errors
+npm run shots         :: write docs/screenshots/electron-*.png
+```
+
+The shell never touches your files: it starts `charta serve` on a free port, waits
+for `/api/health`, and everything else goes through the same guarded core.
+
 ## Native-feel polish
 
-`charta open` is meant to feel like an app, not a tab:
+`charta open` (and the Electron app) is meant to feel like an app, not a tab:
 
 - **Dark title bar** via the DWM API (`DWMWA_USE_IMMERSIVE_DARK_MODE`) and
   **Windows 11 Mica** (`DWMWA_SYSTEMBACKDROP_TYPE`), with a solid title-bar color
@@ -111,7 +144,10 @@ Full runbook and the visual checklist: [`docs/WINDOWS.md`](docs/WINDOWS.md).
 - Receipts xlsx+csv, study notes+flashcards, data-entry table
 - Gap detection, ask-with-citations (refuses to invent), sensitive-file guard
 - Web UI (setup/overview/review/outputs/gaps/ask/activity/settings/styleguide), SSE live strip, voice hook (Web Speech in browser, faster-whisper in CLI)
-- Native window with dark title bar, Mica + solid fallback, taskbar icon/grouping, remembered geometry, custom dropdowns and folder picker (see *Native-feel polish*)
+- Native window with dark title bar, Mica + solid fallback, taskbar icon/grouping, tray, remembered geometry, custom dropdowns and folder picker (see *Native-feel polish*), plus the Electron desktop shell
+- **Design system with tests**: WCAG-AA-checked palette (both themes), 4px spacing scale, 7-step type scale, and every `var(--token)` proven defined — `tests/test_design.py`
+- **Measured UI checks**: `tools/ui_check.py` drives all 9 screens in both themes and fails on horizontal overflow, missing `h1`, targets under 24px, or console errors; it also writes `docs/screenshots/`
+- **Diagnosable startup**: everything goes to `<state>/charta.log`, a session file records the running instance, and a busy port is recovered instead of aborting
 - Protected folders are refused everywhere, including the web API (friendly full-screen page, HTTP 403 from `/api/charter`)
 
 ## What does NOT work yet
@@ -137,11 +173,20 @@ For a personal folder, that's the right trade.
 ## Performance (this machine, 2026-10-14)
 
 - Heuristic classify: <0.1 ms/file; eval accuracy on 5 canonical samples: **5/5 (100%)**
-- `pytest -q`: 66 passed in ~7s (includes a fake OpenAI-compatible server, so no provider is needed)
+- `pytest -q`: 107 passed in ~7s (includes a fake OpenAI-compatible server, so no provider is needed)
+- `npm test` (shell helpers): 6 passed in ~0.15s; `npm run smoke`: 9 screens, no console errors
+- `tools/ui_check.py`: 18 screens (9 routes × dark/light) measured + screenshotted in ~25 s
 - `charta doctor`: read-only, <0.5 s, no writes to your folders
 - Icon generation (`tools/make_icon.py`): 7 sizes, ~0.3 s, 19 KB — stdlib only
 - LLM timings with a live provider: TBD — record `time charta watch` on your laptop and update STATUS.md
 
+## Screenshots
+
+`docs/screenshots/` holds every screen in both themes, generated (not hand-drawn)
+by `tools/ui_check.py` and `npm run shots`. They double as the visual regression
+baseline for the demo video.
+
 ## Layout
 
-See `AGENTS.md` (rulebook), `STATUS.md` (progress log), `DESIGN.md` (UI tokens).
+See `AGENTS.md` (rulebook), `STATUS.md` (progress log), `DESIGN.md` (design
+system), `docs/WINDOWS.md` (Windows + desktop runbook), `desktop/` (Electron shell).

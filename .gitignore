@@ -11,6 +11,9 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+node_modules/
+desktop/dist/
+desktop/out/
 
 # Charta runtime data (never commit a user's folder index/journal)
 .charta/

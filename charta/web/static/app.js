@@ -1,45 +1,56 @@
-// theme + palette + SSE + keyboard (J/K/A/R/E/Z) + review actions
-// + native-feel guards, custom dropdowns, custom folder picker.
+// Charta renderer: shell behaviour, review flow, outputs grid, ask, picker.
+// Desktop-aware: when desktop/preload.js is present we hand the native title bar
+// and shortcut handling to Electron instead of the browser.
 (function(){
+'use strict';
 const root=document.documentElement;
 const saved=localStorage.getItem('charta-theme');
 if(saved)root.dataset.theme=saved;
 else if(matchMedia('(prefers-color-scheme: light)').matches)root.dataset.theme='light';
-window.toggleTheme=()=>{root.dataset.theme=root.dataset.theme==='light'?'dark':'light';
-localStorage.setItem('charta-theme',root.dataset.theme||'dark');};
+const DESKTOP=!!(window.charta&&window.charta.desktop);
+const DEBUG=!!window.__CHARTA_DEBUG__;
+
+window.toggleTheme=()=>{
+ root.dataset.theme=root.dataset.theme==='light'?'dark':'light';
+ localStorage.setItem('charta-theme',root.dataset.theme||'dark');
+ if(DESKTOP)window.charta.setTheme(root.dataset.theme); // keep the native title bar in sync
+};
+if(DESKTOP)window.charta.setTheme(root.dataset.theme||'dark');
 
 // --- native-feel: take the browser's own chrome shortcuts away --------------
-// Charta ships as a window, not a web page. Re-enable everything with --debug.
-const DEBUG=!!window.__CHARTA_DEBUG__;
+// Electron also blocks these at the window level (desktop/main.js); this covers
+// the plain-browser case. `--debug` gives everything back.
 if(!DEBUG){
  document.addEventListener('contextmenu',e=>e.preventDefault());
  document.addEventListener('keydown',e=>{
   const k=(e.key||'').toLowerCase(),mod=e.ctrlKey||e.metaKey;
   const blocked=e.key==='F5'||e.key==='F12'
-   ||(mod&&!e.shiftKey&&['r','f','p'].includes(k))          // reload / find / print
-   ||(mod&&e.shiftKey&&['i','j','c'].includes(k));           // devtools, console, inspect
+   ||(mod&&!e.shiftKey&&['r','f','p'].includes(k))
+   ||(mod&&e.shiftKey&&['i','j','c'].includes(k));
   if(blocked){e.preventDefault();e.stopPropagation();}
  },true);
 }
 
 document.addEventListener('keydown',e=>{
  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}
- if(e.key==='/'&&document.activeElement.tagName!=='TEXTAREA'&&document.activeElement.tagName!=='INPUT'){e.preventDefault();openPalette();}
+ if(e.key==='/'&&!/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)){e.preventDefault();openPalette();}
  if(e.key==='Escape'){closePalette();closePicker();}
 });
-window.openPalette=()=>{document.getElementById('palette').style.display='flex';
-document.getElementById('palInput').focus();};
+window.openPalette=()=>{const p=document.getElementById('palette');if(!p)return;p.style.display='flex';
+ const i=document.getElementById('palInput');if(i){i.value='';palFilter('');i.focus();}};
 window.closePalette=()=>{const p=document.getElementById('palette');if(p)p.style.display='none';};
-window.palFilter=(q)=>{document.querySelectorAll('#palList button').forEach(b=>{
-b.style.display=b.textContent.toLowerCase().includes(q.toLowerCase())?'':'none';});};
+window.palFilter=q=>{document.querySelectorAll('#palList button').forEach(b=>{
+ b.style.display=b.textContent.toLowerCase().includes((q||'').toLowerCase())?'':'none';});};
 window.toast=(msg,undo)=>{const t=document.createElement('div');t.className='toast';t.setAttribute('role','status');
-t.innerHTML=msg+(undo?` <button class="btn" onclick="undoLast()">Undo</button>`:'');document.body.appendChild(t);
+t.innerHTML=String(msg)+(undo?' <button class="btn" onclick="undoLast()">Undo</button>':'');document.body.appendChild(t);
 setTimeout(()=>t.remove(),8000);};
-window.undoLast=async()=>{const f=folder();await fetch('/api/undo?folder='+encodeURIComponent(f),{method:'POST'});location.reload();};
 window.folder=()=>new URLSearchParams(location.search).get('folder')||'';
 async function api(p,o){const r=await fetch(p,o);if(!r.ok)throw new Error(await r.text());return r.json();}
-window.approveOne=async(src)=>{await api('/api/approve?folder='+encodeURIComponent(folder()),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:[src]})});toast('Approved '+src,true);};
-window.rejectOne=async(src)=>{await api('/api/reject?folder='+encodeURIComponent(folder()),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:[src]})});location.reload();};
+const post=(path,body)=>api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}).catch(e=>{toast('Something went wrong: '+e.message,false);throw e;});
+window.undoLast=async()=>{await post('/api/undo?folder='+encodeURIComponent(folder()));location.reload();};
+window.approveOne=async(src)=>{await post('/api/approve?folder='+encodeURIComponent(folder()),{files:[src]});
+ const card=document.querySelector('.prop-card');if(card)card.style.opacity='0.4';toast('Approved '+src,true);};
+window.rejectOne=async(src)=>{await post('/api/reject?folder='+encodeURIComponent(folder()),{files:[src]});location.reload();};
 
 // --- custom dropdowns (native <select> can't be themed or animated) --------
 function initDropdowns(){
@@ -72,18 +83,18 @@ const joinPath=(a,b)=>/[\\/]$/.test(a)?a+b:a+(a.includes('\\')?'\\':'/')+b;
 async function fsList(path){
  let j;
  try{const r=await fetch('/api/fs/list'+(path?'?path='+encodeURIComponent(path):''));j=await r.json();}
- catch(err){document.getElementById('fsNote').textContent='Could not read that folder.';return;}
+ catch(err){const n=document.getElementById('fsNote');if(n)n.textContent='Could not read that folder.';return;}
  PICKER.path=j.path;
- document.getElementById('fsPath').textContent=j.path;
+ const pathEl=document.getElementById('fsPath');if(pathEl)pathEl.textContent=j.path;
  const ul=document.getElementById('fsList');ul.innerHTML='';
  (j.roots||[]).filter(d=>d!==j.path).forEach(d=>ul.appendChild(fsRow('💽 '+d,()=>fsList(d))));
  (j.dirs||[]).forEach(name=>ul.appendChild(fsRow('📁 '+name,()=>fsList(joinPath(j.path,name)))));
  if(!j.dirs.length)ul.appendChild(fsRow('(no subfolders)',null));
- const use=document.getElementById('fsUse');
- use.disabled=!!j.protected;
- document.getElementById('fsUp').disabled=!j.parent;
- document.getElementById('fsUp').onclick=()=>j.parent&&fsList(j.parent);
- document.getElementById('fsNote').textContent=j.protected
+ const use=document.getElementById('fsUse');if(use)use.disabled=!!j.protected;
+ const up=document.getElementById('fsUp');
+ if(up){up.disabled=!j.parent;up.onclick=()=>j.parent&&fsList(j.parent);}
+ const note=document.getElementById('fsNote');
+ if(note)note.textContent=j.protected
   ?'Charta protects system folders — pick a folder inside your documents instead.'
   :(j.error||'');
 }
@@ -92,26 +103,25 @@ function fsRow(label,go){
  if(go){li.onclick=go;li.onkeydown=e=>{if(e.key==='Enter')go();};}else{li.className='muted';}
  return li;
 }
-window.openPicker=()=>{document.getElementById('fsPicker').hidden=false;
- const start=document.getElementById('folder').value||folder()||'';
- fsList(start);document.getElementById('fsUp').focus();};
+window.openPicker=()=>{const p=document.getElementById('fsPicker');if(!p)return;p.hidden=false;
+ const start=(document.getElementById('folder')||{}).value||folder()||'';
+ fsList(start);const up=document.getElementById('fsUp');if(up)up.focus();};
 window.closePicker=()=>{const p=document.getElementById('fsPicker');if(p)p.hidden=true;};
 window.usePickedFolder=()=>{const use=document.getElementById('fsUse');
  if(!use||use.disabled)return;
- document.getElementById('folder').value=PICKER.path;
- const c=document.getElementById('fchip');if(c)c.textContent=PICKER.path;
+ const field=document.getElementById('folder');if(field)field.value=PICKER.path;
+ const chip=document.getElementById('fchip');if(chip)chip.textContent=PICKER.path;
  closePicker();};
 
 // --- setup: staged progress, protected refusal, then start watching --------
 window.createCharter=async()=>{
  const field=document.getElementById('folder');
  const dir=((field&&field.value)||folder()||'.').trim();
- const purpose=document.getElementById('purpose').value;
+ const purpose=(document.getElementById('purpose')||{}).value||'';
  const dd=document.querySelector('.dd[data-name=mode]');
  const mode=dd?dd.dataset.value:'suggest';
  const out=document.getElementById('out');
- const stages=['Understanding your purpose','Drafting rules','Scanning existing files'];
- out.innerHTML='<div class="skel">'+stages.join(' … ')+'</div>';
+ out.innerHTML='<div class="skel" style="height:64px">Understanding your purpose … drafting rules … scanning existing files</div>';
  try{
   const r=await fetch('/api/charter?folder='+encodeURIComponent(dir),{method:'POST',
    headers:{'Content-Type':'application/json'},body:JSON.stringify({purpose,mode})});
@@ -119,26 +129,96 @@ window.createCharter=async()=>{
   if(r.status===403||j.error==='protected'){
    location.href='/protected?folder='+encodeURIComponent(dir)+'&reason='+encodeURIComponent(j.message||'');
    return;}
-  out.innerHTML='<div class="card"><h3>Charter ready</h3><p class="mono">mode: '+j.mode+'</p>'
-   +'<pre class="mono">'+JSON.stringify(j,null,2)+'</pre>'
-   +'<a class="btn btn-primary" href="/overview?folder='+encodeURIComponent(dir)+'">Start watching →</a></div>';
+  const fields=(j.fields||[]).map(f=>'<span class="chip">'+f+'</span>').join(' ');
+  out.innerHTML='<div class="card fadein"><div class="card-head"><h3>Charter ready</h3>'
+   +'<span class="chip">'+(j.mode==='auto'?'Auto mode':'Suggest mode')+'</span></div>'
+   +'<p class="muted">Preset <span class="mono">'+j.preset+'</span> · fields: '+(fields||'—')+'</p>'
+   +'<p class="mono muted">'+j.purpose+'</p>'
+   +'<div class="row"><a class="btn btn-primary" href="/overview?folder='+encodeURIComponent(dir)+'">Start watching →</a>'
+   +'<a class="btn" href="/review?folder='+encodeURIComponent(dir)+'">Review proposals</a></div></div>';
  }catch(err){out.innerHTML='<div class="card">Could not create the charter. '+(err.message||'')+'</div>';}
 };
 
-// review keyboard
+// --- ask the folder --------------------------------------------------------
+function renderAnswer(j){
+ const log=document.getElementById('log');
+ const cites=(j.citations||[]).map(c=>'<button class="chip cite mono" onclick="this.scrollIntoView()">'+c.file+' p'+c.page+'</button>').join(' ');
+ const msg=document.createElement('div');
+ msg.className='msg ai fadein';
+ msg.innerHTML='<div>'+(j.answer||'No answer.')+'</div>'+cites;
+ log.appendChild(msg);msg.scrollIntoView({block:'end'});
+}
+window.askFolder=async(question)=>{
+ const input=document.getElementById('q');
+ const q=typeof question==='string'&&question?question:(input.value||'').trim();
+ if(!q)return;
+ if(input)input.value='';
+ const log=document.getElementById('log');
+ const mine=document.createElement('div');mine.className='msg me';mine.textContent=q;log.appendChild(mine);
+ const pending=document.createElement('div');pending.className='msg ai skel';pending.style.minWidth='220px';pending.textContent='searching…';
+ log.appendChild(pending);pending.scrollIntoView({block:'end'});
+ try{const j=await post('/api/ask?folder='+encodeURIComponent(folder()),{q});pending.remove();renderAnswer(j);}
+ catch(err){pending.remove();}
+};
+
+// --- outputs grid (sortable, sticky header) ---------------------------------
+const SORT={key:null,dir:1};
+window.loadOutput=async(button,kind)=>{
+ if(button){document.querySelectorAll('.tabbar button').forEach(b=>b.setAttribute('aria-selected',String(b===button)));}
+ const grid=document.getElementById('outGrid');
+ if(!grid)return;
+ grid.innerHTML='<div class="skel" style="height:88px">loading outputs…</div>';
+ const sort=(typeof kind==='string'&&kind)?kind:(grid.dataset.kind||'receipts');
+ grid.dataset.kind=sort;
+ let data;
+ try{data=await api('/api/outputs/rows?folder='+encodeURIComponent(folder())+'&kind='+sort+'&t='+Date.now());}
+ catch(err){grid.innerHTML='<div class="empty"><div class="glyph">◌</div><h3>No output yet</h3><p>Press Rebuild now.</p></div>';return;}
+ if(data.error){grid.innerHTML='<div class="banner warn">'+data.error+'</div>';return;}
+ if(!data.rows||!data.rows.length){
+  grid.innerHTML='<div class="empty"><div class="glyph">▦</div><h3>Nothing here yet</h3>'
+   +'<p>No rows in <span class="mono">'+sort+'</span>. Approve a file or press Rebuild now.</p></div>';return;}
+ const cols=data.columns||[];
+ let rows=data.rows.slice();
+ if(SORT.key!==null&&sort===grid.dataset.sortKind){const i=SORT.key;
+  rows.sort((a,b)=>String(a[i]||'').localeCompare(String(b[i]||''),undefined,{numeric:true})*SORT.dir);}
+ grid.dataset.sortKind=sort;
+ grid.innerHTML='<div class="row" style="margin-bottom:var(--s2)"><span class="chip">'+rows.length+' rows</span>'
+  +'<span class="muted caption">'+sort+'</span><span class="spacer"></span>'
+  +'<span class="muted caption">click a header to sort</span></div>'
+  +'<div style="max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-in)"><table class="grid"><thead><tr>'
+  +cols.map((c,i)=>'<th scope="col"><button class="sort-btn" onclick="sortOutput('+i+')">'+c+' ⇅</button></th>').join('')
+  +'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+(r[cols.indexOf(c)]||'')+'</td>').join('')+'</tr>').join('')
+  +'</tbody></table></div>';
+};
+window.sortOutput=(i)=>{SORT.dir=(SORT.key===i)?-SORT.dir:1;SORT.key=i;loadOutput(null);};
+
+// --- review keyboard -------------------------------------------------------
 let sel=0;
+function paintSelection(cards){
+ cards.forEach((c,i)=>c.classList.toggle('focus',i===sel));
+ if(cards[sel])cards[sel].scrollIntoView({block:'center'});
+}
 document.addEventListener('keydown',e=>{
  const cards=[...document.querySelectorAll('.prop-card')];if(!cards.length)return;
- if(e.key==='j'||e.key==='J'){sel=Math.min(sel+1,cards.length-1);cards[sel].scrollIntoView({block:'center'});}
- if(e.key==='k'||e.key==='K'){sel=Math.max(sel-1,0);cards[sel].scrollIntoView({block:'center'});}
+ if(/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName))return;
+ if(e.key==='j'||e.key==='J'){sel=Math.min(sel+1,cards.length-1);paintSelection(cards);}
+ if(e.key==='k'||e.key==='K'){sel=Math.max(sel-1,0);paintSelection(cards);}
+ if(e.key==='a'||e.key==='A'){const b=cards[sel]&&cards[sel].querySelector('.btn-primary');if(b)b.click();}
+ if(e.key==='r'||e.key==='R'){const b=cards[sel]&&cards[sel].querySelectorAll('.btn')[1];if(b)b.click();}
 });
-// SSE live
-try{const es=new EventSource('/api/events');es.onmessage=e=>{const el=document.getElementById('thinking');
-if(el)el.textContent=e.data;};}catch(_){}
-// mic (Web Speech API if present, else file upload hint)
+
+// --- live updates ----------------------------------------------------------
+try{const es=new EventSource('/api/events');es.onmessage=e=>{
+ const el=document.getElementById('thinking');if(el)el.textContent=e.data;};}catch(_){}
+document.addEventListener('visibilitychange',()=>{
+ if(!document.hidden&&DESKTOP&&window.charta.notify)window.charta.notify('ready');});
+
+// mic: Web Speech where available; the CLI/desktop uses local Whisper
 window.toggleMic=(taId)=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-const ta=document.getElementById(taId);if(!SR){toast('No browser STT here — local Whisper runs in desktop/CLI.');return;}
+const ta=document.getElementById(taId);if(!SR){toast('No browser speech engine here — local Whisper runs in the desktop/CLI.');return;}
 const r=new SR();r.onresult=ev=>{ta.value+=(ta.value?' ':'')+ev.results[0][0].transcript;};r.start();
 document.getElementById('micBtn')?.classList.add('rec');r.onend=()=>document.getElementById('micBtn')?.classList.remove('rec');};
+
 initDropdowns();
+window.loadOutput&&document.getElementById('outGrid')&&window.loadOutput(null);
 })();

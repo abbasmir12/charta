@@ -101,6 +101,23 @@
     `web/app.py`, `core/fsbrowse.py`
   - protected-folder refusal is a friendly full-screen page at `/protected`
 
+## 5b. Design system as implemented
+
+Tokens live in `static/tokens.css`; `static/app.css` only composes them.
+
+- Type scale: 11/12/13/14/16/20/28 px, line-height 1.5 body, 1.25 headings,
+  `-0.011em` tracking at >= 20px.
+- Space scale: `--s1..--s7` = 4/8/12/16/24/32/48 px. Never a raw pixel value.
+- Elevation `--sh1/2/3`, focus `--ring`, motion `--t-fast/base/slow` + `--ease`.
+- Both themes are contrast-checked (WCAG AA 4.5:1 text, 3:1 accents) by
+  `tests/test_design.py`, which also fails on any `var(--token)` that is not
+  defined and on a spacing scale that leaves the 4px grid.
+- Clickable chips and sort headers carry a >= 24px hit area (WCAG 2.2 SC 2.5.8),
+  enforced by `tools/ui_check.py` in a real browser.
+- Shell: one `.appbar` serves as an ordinary header in a browser and as the
+  draggable Electron title bar (`html[data-shell="electron"]`), 40px tall to
+  match `titleBarOverlay.height`.
+
 ## 6. Signature moments (demo video)
 
 mic pulse+waveform → charter cards fade in → files fly into tree →

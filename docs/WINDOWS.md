@@ -56,6 +56,22 @@ host line warns, `charta open` still works — it opens your browser instead.
 
 Paste the report back (`--json` for machine-readable) if something is off.
 
+## 4b. Desktop app (Electron) — recommended
+
+```bat
+cd desktop
+npm install
+npm start
+```
+
+The shell starts `charta serve` on a free port, waits for `/api/health`, then shows
+the UI in a real window (custom title bar, Mica, tray, remembered geometry). If it
+cannot start it tells you why in a dialog and in the log. `npm run debug` restores
+F5/Ctrl+R/F/P and DevTools; `npm run smoke` loads all 9 screens headlessly.
+
+Use this in preference to `charta open` (pywebview), which remains a Node-free
+fallback.
+
 ## 5. Right-click integration
 
 ```bat
@@ -98,6 +114,23 @@ Then, in the window:
 `charta open --debug` also prints a `native window polish: {...}` line on load with
 a per-feature pass/fail — that line is the fastest way to see which DWM call the
 OS rejected.
+
+## 7b. "It closed by itself"
+
+The app used to exit silently when the backend could not bind its port, and the
+message died with the console window. Now:
+
+- every run appends to `%APPDATA%\Charta\charta.log` (Electron adds
+  `backend.log` next to it) — `python -m charta.cli logs` prints the tail;
+- a busy port is recovered automatically (`port 8123 is already in use — using
+  47123 instead`);
+- if the native window dies within two seconds Charta falls back to your browser
+  instead of quitting;
+- `%APPDATA%\Charta\session.json` records the running instance, and `charta logs`
+  says "Charta is still running" only when something actually answers on that port.
+
+If it still exits, send me `python -m charta.cli logs --lines 120` plus the last
+lines of `%APPDATA%\Charta\backend.log`.
 
 ## 8. Windows-specific notes
 

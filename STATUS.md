@@ -6,8 +6,9 @@
 
 ## Current Focus
 
-Native-feel polish landed with a real window host (`charta open`); 59/59 green.
-Next: run it on an actual Windows box (DWM/Mica/.ico/geometry are written but unverified).
+Windows-readiness hardening: fixed 64-bit handle truncation, pre-2004 dark-mode id,
+Explorer command quoting and pywebview version drift; added `charta doctor` + docs/WINDOWS.md.
+Next: the actual Windows run (66/66 green here).
 
 ## Milestones
 
@@ -28,12 +29,14 @@ Next: run it on an actual Windows box (DWM/Mica/.ico/geometry are written but un
   - [ ] M6.8 screenshots → docs/screenshots (+Playwright opt.)
   - [x] M6.9 shell install/uninstall + voice wiring
   - [x] M6.10 native-feel polish: window host, DWM dark title bar + Mica (solid fallback), AppUserModelID, multi-size .ico, remembered geometry, browser-key guards with `--debug`, chrome `user-select`, thin themed scrollbars, custom dropdowns + folder picker
+  - [x] M6.11 Windows-readiness hardening: ctypes prototypes (no 64-bit handle truncation), DWM attribute-19 fallback, quoted + cwd-independent Explorer command, pywebview kwarg compatibility, `charta doctor`, docs/WINDOWS.md runbook
 - [x] M7 Polish: sample-data generator, README (+screenshots/GIF, Why-local, perf), eval script + baseline, demo run-through.
 - [x] M8 Any-provider AI: OpenAI-compatible `LLMClient` (Ollama / LM Studio / llama.cpp / vLLM / OpenAI / OpenRouter / Groq / Together / custom), env-var keys, vision for images + scanned PDFs, auto-mode apply loop behind one shared pipeline. Tests: fake OpenAI-compatible server + vision + pipeline.
 
 ## Done Log (newest first)
 
-- 2026-10-14 09:20 UTC, STATUS record for M6.10 (this commit); files: STATUS.md; verified: `git log -1`; commit (this).
+- 2026-10-14 09:40 UTC, STATUS record for M6.11 (this commit); files: STATUS.md; verified: `git log -1`; commit (this).
+- 2026-10-14 09:35 UTC, M6.11 Windows-readiness hardening + doctor; files: charta/shell/native_window.py (ctypes prototypes, attribute-19 fallback, `dwm_available`, exported `ICON_PATH`), charta/shell/desktop.py (`supported_kwargs`, `window_kwargs`, TypeError retry), charta/shell/windows_registry.py (quoted/cwd-independent `right_click_command`, `_launcher`), charta/core/doctor.py (new), charta/core/config.py (`config_path`), charta/cli.py (`doctor`), docs/WINDOWS.md (new), pyproject.toml (`.native` extra), README.md, tests/test_windows_paths.py (new); verified: `pytest -q` 66 passed, `charta doctor` prints an honest report and exits 1 with no provider, printed the exact HKCU command it would write; commit 7a95670.
 - 2026-10-14 09:15 UTC, M6.10 native-feel polish + window host; files: charta/shell/native_window.py (new), charta/shell/desktop.py (new), charta/shell/windows_registry.py, charta/core/fsbrowse.py (new), charta/core/config.py, charta/cli.py (`open`, `--debug`, status line), charta/web/app.py (debug flag, favicon, /protected, /api/fs/list, charter mode + 403, dropdown/picker helpers), charta/web/static/{app.js,app.css,tokens.css}, charta/assets/charta.ico (new), tools/make_icon.py (new), config.toml, requirements.txt, README.md, DESIGN.md, AGENTS.md, tests/{test_native_window,test_fsbrowse,test_web_ui}.py (new); verified: `pytest -q` 59 passed, `eval/eval_classifier.py` 5/5, live `charta open` + curl (setup page has picker and zero `<select>`, `/api/fs/list` lists folders only, `/api/charter` on `C:\Windows` → 403, `/favicon.ico` → 19106-byte ICO, `--debug` flips `window.__CHARTA_DEBUG__` to true, status shows the window mode); commit e3523d0.
 - 2026-10-14 08:52 UTC, M8 any-provider AI + vision + auto mode; files: charta/core/llm.py (rewritten as `LLMClient`), config.py, config.toml, cli.py, web/app.py, ask.py, charter.py, classify.py, extract/__init__.py (vision hook), new core/pipeline.py, new tests/{conftest,test_openai_compat,test_extract,test_pipeline}.py, tests/test_config_llm.py, tests/test_features.py, AGENTS.md §§2/4, README.md, .gitignore; verified: `pytest -q` 42 passed; `eval/eval_classifier.py` 5/5; live CLI run against a fake OpenAI-compatible server (status/charter/watch/proposals/ask/auto-mode/undo all correct, `Authorization: Bearer` + `/v1/*` routes observed in the server log); TestClient smoke of all 10 UI routes + /api/health + /api/charter + /api/ask; commit 634802b.
 - 2026-10-13 09:05 UTC, STATUS record + UI smoke test, all 9 routes 200 (/, styleguide, overview, review, gaps, ask, activity, settings, api/health) via TestClient; files: STATUS.md; verified: smoke script; commit (this).
@@ -53,7 +56,7 @@ Next: run it on an actual Windows box (DWM/Mica/.ico/geometry are written but un
 
 ## Next Up
 
-1. Windows pass on the native window: `pip install pywebview && charta open` — confirm dark title bar, Mica, taskbar icon/grouping, geometry restore; capture screenshots.
+1. Windows pass on the native window: `python -m charta.cli doctor` then `charta open` — walk `docs/WINDOWS.md` §7, capture the `native window polish: {...}` line and screenshots.
 2. Live-provider pass: JSON-validity rate + s/file for Ollama (gemma3:4b) and one cloud vision model on the scanned-PDF sample.
 3. M6.8 Playwright/screenshot pass → docs/screenshots.
 
@@ -67,6 +70,11 @@ Next: run it on an actual Windows box (DWM/Mica/.ico/geometry are written but un
 
 ## Decisions
 
+- 2026-10-14: Declare explicit ctypes `restype`/`argtypes` for `LoadImageW`/`SendMessageW`/`DwmSetWindowAttribute`. Why: undeclared HANDLE/HWND return types truncate to 32 bits on 64-bit Python, so the icon and DWM calls would have silently targeted the wrong window — this would have looked like "Windows polish just doesn't work".
+- 2026-10-14: Try DWM attribute 20 then 19 for the dark title bar. Why: builds before Win10 2004 reject 20, and a rejected attribute is indistinguishable from "feature not supported" in a bug report.
+- 2026-10-14: Filter pywebview kwargs through `inspect.signature` with a TypeError retry. Why: `maximized`/`background_color` don't exist in older pywebview, and an unknown kwarg kills the window before it opens.
+- 2026-10-14: The Explorer entry bootstraps the repo on `sys.path` instead of `python -m charta.cli`. Why: registry commands start with an arbitrary working directory, so `-m` only worked when Charta was pip-installed; quoting is also explicit now that paths contain spaces.
+- 2026-10-14: Ship `charta doctor` (read-only) rather than a longer troubleshooting doc. Why: the Windows run is unverified, so the fastest path is one command whose output can be pasted back for triage.
 - 2026-10-14: Add a real window host (`charta open`, pywebview optional) instead of stubbing the native polish. Why: dark title bar, Mica, taskbar identity and remembered geometry need a window handle; a browser tab makes the whole checklist unreachable.
 - 2026-10-14: Keep `sys.platform != "win32"` guards around every ctypes call and unit-test them as no-ops. Why: the core must pass on Linux CI, and the guard behaviour is the only part of DWM we can actually test here.
 - 2026-10-14: Right-click Explorer entry now launches `charta open` (setup window for that folder) rather than `charta watch`. Why: DESIGN.md screen 1 says the setup window opens from right-click; `watch` stays for the always-on daemon.
@@ -87,6 +95,8 @@ Next: run it on an actual Windows box (DWM/Mica/.ico/geometry are written but un
 
 ## Failures & Lessons
 
+- 2026-10-14: Reviewing the Windows path *before* the first Windows run turned up four defects that tests on Linux could never have caught: undeclared ctypes prototypes (64-bit handle truncation), a single DWM attribute id, unquoted paths in the Explorer command, and pywebview kwargs that older releases reject. Lesson: "guarded no-op on Linux" verifies the guard, not the behaviour — read the platform-specific branch as if it were the only branch.
+- 2026-10-14: Wrote `assert provider.ok is False and "ollama" in hint or provider.ok` — an `and`/`or` precedence slip that made the assertion almost always true. Rewrote it to assert the actual expected state. Lesson: an assertion that can pass for the wrong reason is worse than none.
 - 2026-10-14: Found a real safety gap while wiring the picker — the web API (`/api/charter`) never called `assert_not_protected`, so the UI could write a charter into `C:\Windows` even though the CLI refused. Fixed and covered by a 403 test. Lesson: when two entry points share core code, check *each* entry point for the guards, not just the one with tests.
 - 2026-10-14: The folder-picker test failed because `roots` was only populated when a path was missing. Fixed the behaviour (drive roots are always offered so the picker can switch drives) rather than relaxing the assertion. Lesson: a test that catches an inconsistent return shape is doing its job.
 - 2026-10-14: Left `bytes(...) if False else rgba` in the new PNG encoder — a placeholder expression that would have shipped silently. Caught on read-back before running the generator. Lesson: same failure mode as the earlier `.feed if False` bug; re-read new files before executing them.
@@ -120,6 +130,8 @@ python3 -m charta.cli undo --folder ./demo
 python3 -m charta.cli gaps --folder ./demo
 python3 -m charta.cli ask --folder ./demo "what electricity bills for March?"
 python3 -m charta.cli serve --port 8123   # UI: http://127.0.0.1:8123/overview?folder=./demo
+python3 -m charta.cli doctor              # read-only readiness report (exit 1 if not ready)
+python3 -m charta.cli doctor --json | python3 -m json.tool
 python3 -m charta.cli open ./demo         # native window (pywebview) or browser fallback
 python3 -m charta.cli open ./demo --debug # keep F5/Ctrl+R/F/P + DevTools while developing
 python3 tools/make_icon.py                # regenerate charta/assets/charta.ico (7 sizes)

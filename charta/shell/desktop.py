@@ -18,6 +18,8 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
+from . import electron as electron_shell
+
 from ..core import applog
 from ..core.config import AppConfig
 from .native_window import (APP_USER_MODEL_ID, ICON_PATH, WindowGeometry, load_geometry,
@@ -203,8 +205,17 @@ def run(cfg: AppConfig, folder: str = "", *, debug: bool | None = None,
                 cfg.host, chosen, folder, debug, browser_only)
     print(f"log: {applog.log_path(cfg)}")
 
-    view = "browser" if browser_only else _view_kind()
+    # The Electron shell is the real desktop app (custom title bar, tray, Mica),
+    # so it wins when it is installed; pywebview and the browser are fallbacks.
+    electron_app = None if browser_only else electron_shell.desktop_dir()
+    electron_argv = (electron_shell.command(port=chosen, folder=folder, debug=debug,
+                                            app=electron_app)
+                     if electron_app else None)
+    view = "electron" if electron_argv else ("browser" if browser_only else _view_kind())
     applog.write_session(cfg, pid=os.getpid(), port=chosen, url=url, view=view, debug=debug)
+    if view == "electron":
+        # Electron starts and supervises its own backend, so do not start one here.
+        return _run_electron(cfg, electron_app, chosen, folder, debug)
     _serve_in_thread(cfg.host, chosen, debug)
     if not wait_ready(cfg.host, chosen):
         reason = _SERVER_ERROR["detail"] or f"no response from {url}api/health"
@@ -241,12 +252,72 @@ def run(cfg: AppConfig, folder: str = "", *, debug: bool | None = None,
 
 
 def _view_kind() -> str:
+    """pywebview gets the window only when Electron is not installed."""
     try:
         import webview  # noqa: F401
 
         return "window"
     except ImportError:
         return "browser"
+
+
+def _run_electron(cfg: AppConfig, app: pathlib.Path | None, port: int,
+                  folder: str, debug: bool) -> int:
+    """Hand the UI to the Electron shell and stay alive as its launcher.
+
+    Electron spawns the Python backend itself, so this only starts the window
+    and reports why it stopped — the launcher's own exit used to be silent, and
+    that was the "closes after a few seconds" symptom.
+    """
+    logger = applog.get_logger("desktop")
+    argv = electron_shell.command(port=port, folder=folder, debug=debug, app=app)
+    if argv is None:  # discovered a moment ago; treat as a normal fallback
+        logger.warning("electron vanished between probe and launch")
+        return 1
+    print(f"Opening the Charta window: {' '.join(argv)}")
+    logger.info("electron launch: %s", " ".join(argv))
+    started = time.time()
+    electron_log = applog.log_path(cfg).with_name("electron.log")
+    child = electron_shell.launch(port=port, folder=folder, debug=debug, app=app,
+                                  log_file=electron_log)
+    if child is None:
+        logger.error("electron could not be started")
+        print(f"The Charta window could not be started. Log: {applog.log_path(cfg)}")
+        return 1
+
+    if wait_ready(cfg.host, port):
+        logger.info("electron backend ready on http://%s:%s", cfg.host, port)
+        print(f"Charta is running on http://{cfg.host}:{port}"
+              "  (closing the window keeps it in the tray; Quit there to stop)")
+        print(f"window log: {electron_log}")
+    else:
+        # Not fatal: a hop or a slow first start shows up in the shell's own log.
+        logger.warning("no health response on %s while the Electron window is up", port)
+        print("The Charta window is up but the backend has not answered yet."
+              f" If it stays empty, run: charta logs")
+    applog.write_session(cfg, pid=child.pid, port=port, url=url_for(cfg.host, port, folder),
+                         view="electron", debug=debug)
+    try:
+        while True:
+            code = child.poll()
+            if code is not None:
+                elapsed = time.time() - started
+                logger.info("electron exited with %s after %.1fs", code, elapsed)
+                applog.clear_session(cfg, f"electron exited ({code})")
+                if code and elapsed < 5.0:
+                    # The shell never came up (broken install, no display): the
+                    # user asked for a window, so give them the UI anyway.
+                    logger.warning("electron failed early; falling back to the browser")
+                    print("The Charta window could not start — opening your browser instead.")
+                    print(applog.read_log(cfg, lines=15))
+                    webbrowser.open(url_for(cfg.host, port, folder))
+                    return _keep_alive()
+                return code
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("launcher interrupted; the Charta window keeps running")
+        print("Launcher stopped — the Charta window is still running (tray icon → Quit).")
+        return 0
 
 
 def _run_window(cfg: AppConfig, url: str, debug: bool) -> int:

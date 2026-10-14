@@ -25,10 +25,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 METRICS = """() => {
   const visible = (e) => e.offsetParent !== null;
   const targets = [...document.querySelectorAll('button,a.btn,a,input,textarea,[role=tab]')].filter(visible);
-  const rect = (e) => e.getBoundingClientRect();
-  return {
+  const rect = (e) => e.getBoundingClientRect();    return {
     title: document.title,
     h1: [...document.querySelectorAll('h1')].map(h => (h.textContent || '').trim()),
+    h1Overflowing: [...document.querySelectorAll('h1')]
+      .filter(h => rect(h).right > document.documentElement.clientWidth + 1).length,
     overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     smallTargets: targets.filter(e => rect(e).height > 0 && rect(e).height < 24)
       .map(e => ((e.textContent || e.getAttribute('aria-label') || e.tagName).trim().slice(0, 28)
@@ -41,6 +42,9 @@ METRICS = """() => {
 }"""
 
 ROUTES = ["/", "/overview", "/review", "/outputs", "/gaps", "/ask", "/activity", "/settings", "/styleguide"]
+
+# DESIGN.md promises the layout holds down to 900px wide, so measure there too.
+PASSES = [("desktop", 1280, 800, ("dark", "light")), ("narrow", 900, 700, ("dark",))]
 
 
 def free_port() -> int:
@@ -97,46 +101,53 @@ def main(argv: list[str]) -> int:
         if not wait_for_health(url):
             print(f"server did not start on {url}")
             return 1
+        screens = 0
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
-            for theme in ("dark", "light"):
-                page = browser.new_page(viewport={"width": 1280, "height": 800})
-                errors: list[str] = []
-                page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-                page.on("pageerror", lambda e: errors.append(str(e)))
-                page.goto(url, wait_until="domcontentloaded")
-                page.evaluate("t => { localStorage.setItem('charta-theme', t); }", theme)
-                for route in ROUTES:
-                    errors.clear()
-                    page.goto(f"{url}{route}?folder={folder}", wait_until="networkidle")
-                    page.wait_for_timeout(250)
-                    m = page.evaluate(METRICS)
-                    slug = route.strip("/") or "setup"
-                    page.screenshot(path=str(out_dir / f"{slug}-{theme}.png"))
-                    checks = {
-                        "one h1": len(m["h1"]) == 1,
-                        "no h-overflow": m["overflowX"] <= 1,
-                        "targets >=24px": not m["smallTargets"],
-                        "appbar shown": m["appbar"] == "flex",
-                        "live strip": m["hasLive"],
-                        "no console errors": not errors,
-                    }
-                    if route == "/":
-                        checks["chrome not selectable"] = m["bodySelect"] == "none"
-                        checks["content selectable"] = m["contentSelect"] in ("text", "auto")
-                    for name, ok in checks.items():
-                        if not ok:
+            for label, width, height, themes in PASSES:
+                for theme in themes:
+                    page = browser.new_page(viewport={"width": width, "height": height})
+                    errors: list[str] = []
+                    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+                    page.on("pageerror", lambda e: errors.append(str(e)))
+                    page.goto(url, wait_until="domcontentloaded")
+                    page.evaluate("t => { localStorage.setItem('charta-theme', t); }", theme)
+                    for route in ROUTES:
+                        errors.clear()
+                        page.goto(f"{url}{route}?folder={folder}", wait_until="networkidle")
+                        page.wait_for_timeout(250)
+                        m = page.evaluate(METRICS)
+                        slug = route.strip("/") or "setup"
+                        suffix = f"-{theme}" if label == "desktop" else f"-{label}-{theme}"
+                        page.screenshot(path=str(out_dir / f"{slug}{suffix}.png"))
+                        screens += 1
+                        checks = {
+                            "one h1": len(m["h1"]) == 1,
+                            "h1 fits": m["h1Overflowing"] == 0,
+                            "no h-overflow": m["overflowX"] <= 1,
+                            "targets >=24px": not m["smallTargets"],
+                            "appbar shown": m["appbar"] == "flex",
+                            "live strip": m["hasLive"],
+                            "no console errors": not errors,
+                        }
+                        if route == "/":
+                            checks["chrome not selectable"] = m["bodySelect"] == "none"
+                            checks["content selectable"] = m["contentSelect"] in ("text", "auto")
+                        for name, ok in checks.items():
+                            if ok:
+                                continue
                             detail = ""
                             if name == "targets >=24px":
                                 detail = f" {m['smallTargets']}"
                             if name == "no console errors":
                                 detail = f" {errors[:2]}"
-                            if name == "one h1":
+                            if name in ("one h1", "h1 fits"):
                                 detail = f" {m['h1']}"
-                            failures.append(f"{theme} {route}: {name}{detail}")
-                    print(f"{theme:5} {route:11} h1={len(m['h1'])} overflow={m['overflowX']} "
-                          f"small={len(m['smallTargets'])} errors={len(errors)}")
-                page.close()
+                            failures.append(f"{label}/{theme} {route}: {name}{detail}")
+                        print(f"{label:7} {theme:5} {route:11} h1={len(m['h1'])} "
+                              f"overflow={m['overflowX']} small={len(m['smallTargets'])} "
+                              f"errors={len(errors)}")
+                    page.close()
             browser.close()
     finally:
         if not args.keep:
@@ -152,7 +163,7 @@ def main(argv: list[str]) -> int:
         for line in failures:
             print(f"  - {line}")
         return 1
-    print(f"OK — {len(ROUTES) * 2} screens verified (dark + light)")
+    print(f"OK — {screens} screens verified (desktop 1280px dark+light, narrow 900px dark)")
     return 0
 
 

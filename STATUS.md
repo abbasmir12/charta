@@ -6,8 +6,9 @@
 
 ## Current Focus
 
-Electron desktop shell + measured design system landed (107 py + 6 node green, 18 screens
-verified in dark and light). Next: a Windows run of the Electron window (real display, Mica, tray).
+Electron desktop shell + measured design system + discovered exit path landed (120 py + 6 node green, 27 screens
+verified in dark and light, narrow + desktop). Every exit now has a log file
+and a session record so the user never loses the state.
 
 ## Milestones
 
@@ -25,7 +26,7 @@ verified in dark and light). Next: a Windows run of the Electron window (real di
   - [x] M6.5 Outputs, Gaps, Ask (+drawer), Activity, Settings
   - [x] M6.6 empty/loading/error/provider-offline states
   - [x] M6.7 a11y + reduced-motion pass
-  - [x] M6.8 screenshots → docs/screenshots: 18 browser screens (dark+light) by tools/ui_check.py + 9 Electron-window screens by `npm run shots`
+  - [x] M6.8 screenshots → docs/screenshots: 27 screens verified (desktop 1280px dark+light, narrow 900px dark) by tools/ui_check.py + 9 Electron-window screens by `npm run shots`
   - [x] M6.9 shell install/uninstall + voice wiring
   - [x] M6.10 native-feel polish: window host, DWM dark title bar + Mica (solid fallback), AppUserModelID, multi-size .ico, remembered geometry, browser-key guards with `--debug`, chrome `user-select`, thin themed scrollbars, custom dropdowns + folder picker
   - [x] M6.12 Electron desktop shell + design system: custom title bar (titleBarOverlay) following the theme, Mica, tray with close-to-tray, single instance, AppUserModelID, shared window.json geometry, `before-input-event` shortcut blocking, contextIsolation/sandbox/contextBridge hardening; token system with type/space scales; contrast-checked themes; appbar app shell; sortable output grid; `tools/ui_check.py` measures every screen and `tests/test_design.py` gates the design system
@@ -36,7 +37,7 @@ verified in dark and light). Next: a Windows run of the Electron window (real di
 
 ## Done Log (newest first)
 
-- 2026-10-14 10:05 UTC, STATUS record for M6.12 + M6.13 (this commit); files: STATUS.md; verified: `git log -1`; commit (this).
+- 2026-10-14 10:05 UTC, STATUS record for M6.12 + M6.13 (this commit); files: STATUS.md; verified: `pytest -q` 120 passed, `npm test` 6 passed, `python3 tools/ui_check.py` 27/27 screens OK, `npm run shots` 9 Electron screens; commit (this).
 - 2026-10-14 10:00 UTC, M6.12 Electron desktop shell + measured design system; files: desktop/{package.json,main.js,preload.js,lib/backend.js,lib/paths.js,lib/window-state.js,test/unit.test.js}, charta/web/{app.py,static/tokens.css,static/app.css,static/app.js}, tests/test_design.py, tools/ui_check.py, docs/screenshots/*, README.md, DESIGN.md, docs/WINDOWS.md, AGENTS.md; verified: `pytest -q` 107 passed, `npm test` 6 passed, `npm run smoke` 9/9 routes ok, `python3 tools/ui_check.py` 18/18 screens OK, `npm run shots` 9 Electron screens; commit c3bcc67.
 - 2026-10-14 09:55 UTC, M6.13 silent-exit fix; files: charta/core/applog.py, charta/shell/desktop.py, charta/cli.py (`logs`, `--browser`, `--strict-port`), tests/test_runtime.py; verified: busy-port recovery reproduced live (8155 in use → picked 44019, logged), log + session files written, `pytest -q` green; commit c3bcc67.
 - 2026-10-14 09:50 UTC, published to GitHub `abbasmir12/charta` over SSH; remote was empty, pushed `main` (14 commits) and set upstream; files: none (repo metadata) + this STATUS entry; verified: `git push -u origin main` exit 0, `git ls-remote origin` → `refs/heads/main 3623c74`, `git status -sb` → `## main...origin/main` (in sync); published commit 3623c74.

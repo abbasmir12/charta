@@ -59,6 +59,26 @@ def test_backend_command_is_the_serve_subcommand():
     assert argv[3:5] == ["serve", "--port"] and argv[5] == "8123" and argv[-1] == "--debug"
 
 
+def test_setup_repoints_at_a_new_state_dir(tmp_path):
+    """A second call must create its own file, not reuse the first handler.
+
+    The Electron shell, the CLI and the tests all call setup() with different
+    state dirs; pinning the handlers made setup() report a log that was never
+    written.
+    """
+    first = AppConfig(state_dir=str(tmp_path / "one"))
+    second = AppConfig(state_dir=str(tmp_path / "two"))
+    assert applog.setup(first).exists()
+    assert applog.setup(second) == second.state_path() / "charta.log"
+    assert (tmp_path / "two" / "charta.log").exists()
+    applog.get_logger("test").info("second dir line")
+    assert "second dir line" in applog.read_log(second)
+    # Back to the first dir: no stale handle, and it still works.
+    assert applog.setup(first).exists()
+    applog.get_logger("test").info("back to one")
+    assert "back to one" in applog.read_log(first)
+
+
 def test_read_log_explains_a_missing_file(cfg):
     assert "no log yet" in applog.read_log(cfg)
 

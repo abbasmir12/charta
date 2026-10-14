@@ -25,6 +25,23 @@ LOG_NAME = "charta.log"
 SESSION_NAME = "session.json"
 _LOGGER_NAME = "charta"
 _configured = False
+_handler_path: pathlib.Path | None = None
+
+
+class _SafeStreamHandler(logging.StreamHandler):
+    """A stderr handler that survives having its stream closed underneath it.
+
+    The file is the source of truth and must never be lost to a stderr that a
+    test harness (or a GUI launcher with no console) closed or replaced, which
+    is otherwise a real `logging` error at the worst possible moment.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.stream = sys.stderr
+        try:
+            super().emit(record)
+        except (OSError, ValueError):  # closed or detached stream
+            pass
 
 
 def log_path(cfg: AppConfig) -> pathlib.Path:
@@ -39,24 +56,46 @@ def _timestamp() -> str:
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
+def _open_file_handler(path: pathlib.Path, logger: logging.Logger) -> bool:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"charta: cannot write {path} ({e}); logging to stderr only", file=sys.stderr)
+        return False
+    handler = logging.FileHandler(path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)-7s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S"))
+    logger.addHandler(handler)
+    return True
+
+
+def _close_file_handlers(logger: logging.Logger) -> None:
+    for handler in list(logger.handlers):
+        if isinstance(handler, logging.FileHandler):
+            logger.removeHandler(handler)
+            handler.close()
+
+
 def setup(cfg: AppConfig, *, level: int = logging.INFO) -> pathlib.Path:
-    """Configure file logging once, and capture uncaught exceptions from any thread."""
-    global _configured
+    """Point logging at this state dir, and capture uncaught exceptions once.
+
+    Idempotent, but *not* once-only: the Electron shell, the CLI and the tests all
+    call this with different state dirs, and a first call that pinned the handlers
+    would silently report a log file it never opened (the file the caller is told
+    to read would not exist).
+    """
+    global _configured, _handler_path
     path = log_path(cfg)
     logger = logging.getLogger(_LOGGER_NAME)
     logger.setLevel(level)
-    if not _configured:
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            handler = logging.FileHandler(path, encoding="utf-8")
-            handler.setFormatter(logging.Formatter(
-                "%(asctime)s %(levelname)-7s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S"))
-            logger.addHandler(handler)
-            stderr = logging.StreamHandler()
+    if _handler_path != path:
+        _close_file_handlers(logger)
+        if not any(isinstance(h, _SafeStreamHandler) for h in logger.handlers):
+            stderr = _SafeStreamHandler()
             stderr.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
             logger.addHandler(stderr)
-        except OSError as e:  # unwritable state dir: keep going with stderr only
-            print(f"charta: cannot write {path} ({e}); logging to stderr only", file=sys.stderr)
+        _handler_path = path if _open_file_handler(path, logger) else None
+    if not _configured:
         sys.excepthook = _log_exception
         threading.excepthook = _log_thread_exception
         _configured = True

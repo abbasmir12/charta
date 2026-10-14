@@ -12,18 +12,22 @@ from .core import proposals as prop_store
 from .core.ask import answer_query, build_index
 from .core.charter import (create_charter_from_text, load_charter, preset_charter,
                            save_charter)
-from .core.classify import propose_for_file
 from .core.config import AppConfig
-from .core.extract import extract_text
+from .core.extract import VisionFn
 from .core.gaps import gaps_for_folder
-from .core.llm import OllamaClient, ollama_ping
+from .core.llm import LLMClient
 from .core.outputs import build_data_entry, build_receipts, build_study
 from .core.paths import assert_not_protected
-from .core.sensitive import detect
+from .core.pipeline import process_new_file
 
 
-def _client() -> OllamaClient:
-    return OllamaClient(AppConfig.load())
+def _client() -> LLMClient:
+    return LLMClient(AppConfig.load())
+
+
+def _vision(cfg: AppConfig, client: LLMClient) -> VisionFn | None:
+    """Vision hook for scanned PDFs/images, or None when disabled."""
+    return client.describe_image if cfg.vision else None
 
 
 def cmd_charter(args: argparse.Namespace) -> int:
@@ -57,16 +61,19 @@ def cmd_watch(args: argparse.Namespace) -> int:
 
     cfg = AppConfig.load()
     client = _client()
+    vision = _vision(cfg, client)
+    auto = ch.mode == "auto"
 
     def on_file(p: pathlib.Path) -> None:
-        res = extract_text(p)
-        rep = detect(res.text)
-        prop = propose_for_file(p.name, res.text, ch, client, rep.sensitive)
-        prop.source = str(p.relative_to(folder)) if p.is_relative_to(folder) else p.name
-        prop_store.upsert(folder, prop)
-        print(f"proposed: {prop.source} → {prop.dest_dir}/{prop.new_name} ({prop.reason})")
+        res = process_new_file(folder, p, ch, client, auto_apply=auto,
+                               dry_run=args.dry_run, vision=vision)
+        prop = res.proposal
+        verb = "moved" if res.applied else ("would move" if auto else "proposed")
+        dest = res.dst or f"{prop.dest_dir}/{prop.new_name}"
+        print(f"{verb}: {prop.source} → {dest} ({prop.reason})")
 
-    print(f"Watching {folder} (Ctrl+C to stop). Mode: {ch.mode}.")
+    print(f"Watching {folder} (Ctrl+C to stop). Mode: {ch.mode}"
+          f"{' [dry-run]' if args.dry_run else ''}.")
     if args.scan:
         for p in sorted(folder.rglob("*")):
             if p.is_file() and ".charta" not in p.parts and wait_stable(p, 0.2):
@@ -94,7 +101,10 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"Proposals pending: {len([p for p in props if p.status == 'pending'])}")
     print(f"Journal entries: {len(journal_mod.entries(folder))}")
     cfg = AppConfig.load()
-    print(f"Ollama ({cfg.ollama_host}): {'up' if ollama_ping(cfg.ollama_host) else 'DOWN — run: ollama serve'}")
+    up = LLMClient(cfg).ping()
+    print(f"Provider: {cfg.llm_provider} @ {cfg.llm_base_url} ({cfg.generation_model})")
+    print(f"AI: {'up' if up else 'DOWN — check [llm] in config.toml'}"
+          + ("" if up else " (offline: heuristic fallback still works)"))
     return 0
 
 
@@ -136,8 +146,10 @@ def cmd_undo(args: argparse.Namespace) -> int:
 def cmd_ask(args: argparse.Namespace) -> int:
     folder = pathlib.Path(args.folder)
     ch = load_charter(folder)
-    idx = build_index(folder, _client())
-    ans = answer_query(args.question, idx, _client())
+    client = _client()
+    cfg = AppConfig.load()
+    idx = build_index(folder, client, vision=_vision(cfg, client))
+    ans = answer_query(args.question, idx, client)
     print(ans.text)
     for c in ans.citations:
         print(f"  [{c.file} p{c.page}] {c.excerpt[:120]}")
@@ -179,6 +191,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mode", default="", choices=["", "suggest", "auto"]); p.set_defaults(fn=cmd_charter)
     p = sub.add_parser("watch"); p.add_argument("folder", nargs="?", default=".")
     p.add_argument("--scan", action="store_true"); p.add_argument("--once", action="store_true")
+    p.add_argument("--dry-run", action="store_true",
+                   help="in auto mode, log the move without performing it")
     p.set_defaults(fn=cmd_watch)
     p = sub.add_parser("status"); p.add_argument("--folder", default="."); p.set_defaults(fn=cmd_status)
     p = sub.add_parser("proposals"); p.add_argument("--folder", default="."); p.set_defaults(fn=cmd_proposals)

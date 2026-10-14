@@ -42,6 +42,13 @@ def test_ask_citations_and_refusal(tmp_path):
     assert not no.found and "couldn't find" in no.text
 
 
+def test_index_skips_images_without_vision(tmp_path):
+    (tmp_path / "shot.png").write_bytes(b"x")
+    (tmp_path / "note.txt").write_text("hello world")
+    idx = build_index(tmp_path, None)
+    assert idx and all("shot.png" not in d["file"] for d in idx)
+
+
 def test_chunk_and_embed():
     assert chunk_text("") == []
     v = hash_embed("hello world")

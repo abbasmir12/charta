@@ -31,10 +31,17 @@ Headline features (priority order):
 ## 2. Tech stack
 
 - Language: Python 3.11+ (Windows-first, core stays cross-platform).
-- Model runtime: Ollama at `http://localhost:11434`.
-  - Generation: Gemma vision-capable model (4B-class preferred),
-    configurable via `config.toml`, never hard-coded.
-  - Embeddings: configurable (e.g. `nomic-embed-text` or `embeddinggemma`).
+- Model runtime: any **OpenAI-compatible** HTTP endpoint, selected in
+  `config.toml` → `[llm]` (`provider`, `base_url`, `api_key`).
+  - Default: Ollama at `http://localhost:11434/v1` (local, no key).
+  - Also supported: LM Studio, llama.cpp, vLLM, OpenAI, OpenRouter, Groq,
+    Together, DeepSeek, or a `custom` base_url.
+  - One client (`charta.core.llm.LLMClient`) for all of them — never add a
+    second provider-specific HTTP path.
+  - Generation: vision-capable model (4B-class preferred), configurable via
+    `config.toml`, never hard-coded.
+  - Embeddings: configurable (e.g. `nomic-embed-text`).
+  - API keys come from env (`CHARTA_API_KEY` / `OPENAI_API_KEY`), not the repo.
 - File watching: `watchdog`.
 - PDF text: `PyMuPDF`. Scanned PDFs/screenshots: Gemma vision; fallback RapidOCR.
   Extractor behind one interface (`charta.core.extract`).
@@ -81,13 +88,17 @@ Any UI change must follow DESIGN.md.
 - Type hints on all public functions. Keep modules small (<300 lines
   preferred); split if larger.
 - Tests for every feature: at least one pytest per new core function.
-- No network calls except to local Ollama (`localhost:11434`) and the
-  local FastAPI UI. No telemetry, no CDN (fonts/icons bundled locally).
+- Network calls go only to the configured LLM endpoint and the local FastAPI
+  UI. Local providers are the default; a cloud endpoint is an explicit opt-in
+  (config/env) and the UI must label it as cloud. No telemetry, no CDN
+  (fonts/icons bundled locally).
 - No hard-coded paths, ports, or model names. All config in one file:
   `config.toml` at repo root (loaded by `charta.core.config`).
-- Every AI call: timeout + 1 retry + graceful fallback message when
-  Ollama is down. Request structured JSON, validate with Pydantic;
+- Every AI call: timeout + 1 retry + graceful fallback message when the
+  provider is unreachable. Request structured JSON, validate with Pydantic;
   on invalid JSON retry once, then log to STATUS.md Failures & Lessons.
+- Vision (images/scanned PDFs) goes through the same client and an optional
+  `vision` hook in `charta.core.extract`; transcribed text is redacted.
 - Keep Windows paths working (`pathlib`), but core must pass on Linux CI.
 - `ruff`/`black`-clean if available; no dead code.
 

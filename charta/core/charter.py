@@ -7,7 +7,7 @@ import pathlib
 import re
 from dataclasses import asdict, dataclass, field
 
-from .llm import OllamaClient
+from .llm import LLMClient
 
 CHARTER_FILENAME = ".charta/charter.md"
 
@@ -153,7 +153,7 @@ def _guess_preset(purpose: str) -> str:
     return "student"
 
 
-def create_charter_from_text(purpose: str, client: OllamaClient | None = None) -> Charter:
+def create_charter_from_text(purpose: str, client: LLMClient | None = None) -> Charter:
     """Ask Gemma for structured charter JSON; fallback to preset template."""
     base = preset_charter(_guess_preset(purpose))
     base.purpose = purpose.strip() or base.purpose

@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 
 from .charter import Charter
-from .llm import OllamaClient
+from .llm import LLMClient
 
 
 @dataclass
@@ -63,7 +63,7 @@ def _heuristic(text: str, filename: str, charter: Charter) -> Proposal:
 
 
 def propose_for_file(filename: str, text: str, charter: Charter,
-                     client: OllamaClient | None = None,
+                     client: LLMClient | None = None,
                      sensitive: bool = False) -> Proposal:
     if client is not None:
         prompt = ("Reply ONLY JSON {dest_dir,new_name,reason,confidence}. "

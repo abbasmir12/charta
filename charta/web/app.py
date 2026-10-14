@@ -13,10 +13,11 @@ from ..core import journal as journal_mod
 from ..core import mover as mover_mod
 from ..core import proposals as prop_store
 from ..core.ask import answer_query, build_index
-from ..core.charter import PRESETS, create_charter_from_text, load_charter, save_charter
+from ..core.charter import create_charter_from_text, load_charter, save_charter
 from ..core.config import AppConfig
+from ..core.extract import VisionFn
 from ..core.gaps import gaps_for_folder
-from ..core.llm import OllamaClient, ollama_ping
+from ..core.llm import LLMClient
 from ..core.outputs import build_data_entry, build_receipts, build_study
 
 STATIC = pathlib.Path(__file__).parent / "static"
@@ -27,9 +28,24 @@ if STATIC.exists():
 THINKING: dict[str, str] = {"msg": "Idle — watching nothing yet."}
 
 
+def _cfg() -> AppConfig:
+    return AppConfig.load()
+
+
+def _client() -> LLMClient:
+    return LLMClient(_cfg())
+
+
+def _vision(cfg: AppConfig, client: LLMClient) -> VisionFn | None:
+    return client.describe_image if cfg.vision else None
+
+
 def shell(page: str, folder: str, inner: str, mode: str = "suggest") -> str:
     pill = ('<span class="chip pill-suggest">Suggest mode: nothing moves without you</span>'
             if mode != "auto" else '<span class="chip pill-auto">Auto mode</span>')
+    provider = _cfg().llm_provider
+    privacy = ("100% local" if provider in ("ollama", "lmstudio", "llamacpp", "vllm")
+               else f"cloud: {provider}")
     nav = "".join(
         f'<a href="/{n}?folder={folder}" class="{"active" if page==n else ""}">{icon(n)} {n.title()}</a>'
         for n in ["overview", "review", "outputs", "gaps", "ask", "activity", "settings"])
@@ -40,7 +56,7 @@ def shell(page: str, folder: str, inner: str, mode: str = "suggest") -> str:
 <nav class="sidebar glass" aria-label="Main"><div class="mono">◈ Charta</div>
 <div class="chip"><span class="dot dot-idle"></span>{folder or 'no folder'}</div>{nav}
 <button onclick="toggleTheme()">◐ Theme</button>
-<span class="chip" title="All models run on this machine via Ollama. No cloud calls.">100% local</span></nav>
+<span class="chip" title="Where the AI runs is set by [llm] in config.toml — local by default.">{privacy}</span></nav>
 <div style="flex:1"><div class="topbar"><strong class="mono">{folder}</strong>{pill}
 <span class="chip">Ctrl+K</span><span id="thinking" role="status">{THINKING['msg']}</span></div>
 <main class="main content">{inner}</main></div></div>
@@ -189,10 +205,12 @@ def activity(folder: str = "") -> str:
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings(folder: str = "") -> str:
-    cfg = AppConfig.load()
-    up = ollama_ping(cfg.ollama_host)
-    inner = f"""<div class="card"><h2>Models</h2><p class="mono">gen: {cfg.generation_model} · embed: {cfg.embedding_model}</p>
-<p>Ollama: {'🟢 healthy' if up else '🔴 offline — run: <code>ollama serve</code>'} <button class="btn" onclick="location.reload()">Check again</button></p></div>
+    cfg = _cfg()
+    up = LLMClient(cfg).ping()
+    inner = f"""<div class="card"><h2>AI provider</h2><p class="mono">{cfg.llm_provider} · {cfg.llm_base_url}</p>
+<p class="mono">gen: {cfg.generation_model} · embed: {cfg.embedding_model} · vision: {'on' if cfg.vision else 'off'}</p>
+<p>Status: {'🟢 healthy' if up else '🔴 offline'} <button class="btn" onclick="location.reload()">Check again</button></p>
+<p>Change it in <code>config.toml</code> → <code>[llm]</code>: Ollama, LM Studio, OpenAI, OpenRouter, Groq, or any OpenAI-compatible endpoint.</p></div>
 <div class="card"><h2>Voice</h2><p>Local Whisper ({cfg.whisper_model}) by default.</p>
 <p>ElevenLabs: <span class="badge-sensitive">Cloud: audio leaves your device</span> — off by default.</p></div>
 <div class="card"><h2>Privacy</h2><p>All processing is local. There is no delete button anywhere — Charta only moves/copies, and every move can be undone.</p></div>"""
@@ -203,7 +221,7 @@ def settings(folder: str = "") -> str:
 @app.post("/api/charter")
 async def api_charter(folder: str, req: Request) -> JSONResponse:
     body = await req.json()
-    ch = create_charter_from_text(str(body.get("purpose", "")), OllamaClient(AppConfig.load()))
+    ch = create_charter_from_text(str(body.get("purpose", "")), _client())
     save_charter(pathlib.Path(folder), ch)
     return JSONResponse({"purpose": ch.purpose, "preset": ch.preset, "fields": ch.fields})
 
@@ -261,16 +279,19 @@ def api_outputs(folder: str) -> JSONResponse:
 @app.post("/api/ask")
 async def api_ask(folder: str, req: Request) -> JSONResponse:
     body = await req.json()
-    idx = build_index(folder, OllamaClient(AppConfig.load()))
-    ans = answer_query(str(body.get("q", "")), idx, OllamaClient(AppConfig.load()))
+    cfg = _cfg()
+    client = LLMClient(cfg)
+    idx = build_index(folder, client, vision=_vision(cfg, client))
+    ans = answer_query(str(body.get("q", "")), idx, client)
     return JSONResponse({"answer": ans.text,
                          "citations": [{"file": c.file, "page": c.page} for c in ans.citations]})
 
 
 @app.get("/api/health")
 def health() -> JSONResponse:
-    cfg = AppConfig.load()
-    return JSONResponse({"ollama": ollama_ping(cfg.ollama_host), "models": [cfg.generation_model]})
+    cfg = _cfg()
+    return JSONResponse({"provider": cfg.llm_provider, "base_url": cfg.llm_base_url,
+                         "llm": LLMClient(cfg).ping(), "models": [cfg.generation_model]})
 
 
 @app.get("/api/events")

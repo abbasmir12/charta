@@ -1,4 +1,4 @@
-"""Ask the folder: chunk, embed (Ollama or hash fallback), cosine retrieve, cite."""
+"""Ask the folder: chunk, embed (provider or hash fallback), cosine retrieve, cite."""
 from __future__ import annotations
 
 import hashlib
@@ -8,8 +8,8 @@ import re
 from dataclasses import dataclass
 
 from . import sensitive as sens_mod
-from .extract import extract_text
-from .llm import OllamaClient
+from .extract import VisionFn, extract_text
+from .llm import LLMClient
 
 
 @dataclass
@@ -50,16 +50,19 @@ def cosine(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b))
 
 
-def build_index(folder: str | pathlib.Path, client: OllamaClient | None = None,
-                exclude_sensitive: bool = True) -> list[dict]:
+def build_index(folder: str | pathlib.Path, client: LLMClient | None = None,
+                exclude_sensitive: bool = True, vision: VisionFn | None = None) -> list[dict]:
     folder = pathlib.Path(folder)
     idx = []
     for p in sorted(folder.rglob("*")):
         if not p.is_file() or ".charta" in p.parts:
             continue
-        if p.suffix.lower() not in (".txt", ".md", ".csv", ".pdf", ".docx"):
+        if p.suffix.lower() not in (".txt", ".md", ".csv", ".pdf", ".docx",
+                                    ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"):
             continue
-        res = extract_text(p)
+        res = extract_text(p, vision)
+        if res.method == "image-stub":  # no vision model: nothing text-like to index
+            continue
         if exclude_sensitive and sens_mod.detect(res.text).sensitive:
             continue
         for j, ch in enumerate(chunk_text(res.text)):
@@ -69,7 +72,7 @@ def build_index(folder: str | pathlib.Path, client: OllamaClient | None = None,
     return idx
 
 
-def answer_query(query: str, index: list[dict], client: OllamaClient | None = None,
+def answer_query(query: str, index: list[dict], client: LLMClient | None = None,
                  top_k: int = 3) -> Answer:
     if not index:
         return Answer("I couldn't find that in this folder — no indexed files yet.", [], False)

@@ -74,6 +74,10 @@ Right-click integration (Windows, no admin): `charta install-shell`
 (Win11: entry under *Show more options*) — it opens the **setup window** for the
 folder you clicked. `charta uninstall-shell` removes it.
 
+**On Windows, start here:** `python -m charta.cli doctor` prints a read-only
+readiness report (provider, icon, pywebview, DWM, shell entry, safety guard).
+Full runbook and the visual checklist: [`docs/WINDOWS.md`](docs/WINDOWS.md).
+
 ## Native-feel polish
 
 `charta open` is meant to feel like an app, not a tab:
@@ -133,7 +137,8 @@ For a personal folder, that's the right trade.
 ## Performance (this machine, 2026-10-14)
 
 - Heuristic classify: <0.1 ms/file; eval accuracy on 5 canonical samples: **5/5 (100%)**
-- `pytest -q`: 59 passed in ~7s (includes a fake OpenAI-compatible server, so no provider is needed)
+- `pytest -q`: 66 passed in ~7s (includes a fake OpenAI-compatible server, so no provider is needed)
+- `charta doctor`: read-only, <0.5 s, no writes to your folders
 - Icon generation (`tools/make_icon.py`): 7 sizes, ~0.3 s, 19 KB — stdlib only
 - LLM timings with a live provider: TBD — record `time charta watch` on your laptop and update STATUS.md
 

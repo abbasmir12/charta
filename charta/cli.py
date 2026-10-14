@@ -183,6 +183,15 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Read-only environment report — the first thing to run on a new machine."""
+    from .core.doctor import format_report, report_json, run_checks, verdict
+
+    checks = run_checks(AppConfig.load(), ping=not args.no_ping)
+    print(report_json(checks) if args.json else format_report(checks))
+    return 0 if verdict(checks) else 1
+
+
 def cmd_open(args: argparse.Namespace) -> int:
     """Native window (pywebview) or the default browser as a fallback."""
     import os
@@ -236,6 +245,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=0)
     p.add_argument("--debug", action="store_true")
     p.set_defaults(fn=cmd_open)
+    p = sub.add_parser("doctor", help="check this machine's Charta setup (read-only)")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--no-ping", action="store_true", help="skip the provider reachability check")
+    p.set_defaults(fn=cmd_doctor)
     p = sub.add_parser("install-shell"); p.set_defaults(fn=lambda a: cmd_shell(a, True))
     p = sub.add_parser("uninstall-shell"); p.set_defaults(fn=lambda a: cmd_shell(a, False))
     p = sub.add_parser("unwatch"); p.add_argument("--folder", default=".")

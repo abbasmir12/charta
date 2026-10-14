@@ -7,6 +7,7 @@ browser and say so, so the app never hard-fails on a missing dependency.
 """
 from __future__ import annotations
 
+import inspect
 import os
 import pathlib
 import threading
@@ -15,10 +16,9 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
-from .native_window import (APP_USER_MODEL_ID, WindowGeometry, load_geometry,
+from .native_window import (APP_USER_MODEL_ID, ICON_PATH, WindowGeometry, load_geometry,
                             polish_window, save_geometry)
 
-ICON = pathlib.Path(__file__).resolve().parent.parent / "assets" / "charta.ico"
 APP_TITLE = "Charta"
 
 
@@ -46,6 +46,31 @@ def wait_ready(host: str, port: int, timeout: float = 20.0) -> bool:
         except Exception:  # noqa: BLE001 — server still starting
             time.sleep(0.2)
     return False
+
+
+def supported_kwargs(func: object, kwargs: dict) -> dict:
+    """Drop kwargs a pywebview version doesn't know (it grew these over time).
+
+    pywebview raises TypeError on unknown kwargs, so passing `maximized` or
+    `background_color` to an older build would kill the window before it opens.
+    """
+    try:
+        params = inspect.signature(func).parameters  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return kwargs
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return kwargs
+    return {key: value for key, value in kwargs.items() if key in params}
+
+
+def window_kwargs(geo: WindowGeometry, title: str, url: str) -> dict:
+    return {
+        "title": title, "url": url,
+        "width": geo.width, "height": geo.height,
+        "x": None if geo.x < 0 else geo.x, "y": None if geo.y < 0 else geo.y,
+        "min_size": (480, 360), "maximized": geo.maximized,
+        "background_color": "#0B0D12",  # avoids a white flash before first paint
+    }
 
 
 def _hwnd(window: object) -> int:
@@ -112,15 +137,17 @@ def run(host: str, port: int, folder: str = "", *, debug: bool = False,
         return 0
 
     geo = load_geometry(state_dir)
-    window = webview.create_window(
-        APP_TITLE, url, width=geo.width, height=geo.height,
-        x=None if geo.x < 0 else geo.x, y=None if geo.y < 0 else geo.y,
-        min_size=(480, 360), maximized=geo.maximized, background_color="#0B0D12",
-    )
+    kwargs = supported_kwargs(webview.create_window, window_kwargs(geo, APP_TITLE, url))
+    try:
+        window = webview.create_window(**kwargs)
+    except TypeError as e:  # a build with a stricter signature than we detected
+        print(f"pywebview rejected the window options ({e}); retrying with defaults.")
+        window = webview.create_window(APP_TITLE, url, width=geo.width, height=geo.height)
 
     def on_loaded() -> None:
         handle = _hwnd(window)
-        report = (polish_window(handle, mica=mica, ico_path=ICON if ICON.exists() else None)
+        report = (polish_window(handle, mica=mica,
+                                ico_path=ICON_PATH if ICON_PATH.exists() else None)
                   if handle else {"window_handle": False})
         print(f"native window polish: {report}")
 
@@ -143,4 +170,5 @@ def group_taskbar() -> bool:
     return set_app_user_model_id(APP_USER_MODEL_ID)
 
 
-__all__ = ["APP_TITLE", "group_taskbar", "run", "url_for", "wait_ready"]
+__all__ = ["APP_TITLE", "group_taskbar", "run", "supported_kwargs", "url_for",
+           "wait_ready", "window_kwargs"]

@@ -118,6 +118,11 @@ class AppConfig:
                 else default_state_dir())
 
 
+def config_path() -> pathlib.Path:
+    """The config.toml actually in use (repo root, else cwd)."""
+    return _default_path()
+
+
 def _default_path() -> pathlib.Path:
     # config.toml at repo root (parent of charta pkg) or cwd fallback
     here = pathlib.Path(__file__).resolve()

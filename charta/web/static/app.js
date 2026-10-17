@@ -6,16 +6,29 @@
 const root=document.documentElement;
 const saved=localStorage.getItem('charta-theme');
 if(saved)root.dataset.theme=saved;
-else if(matchMedia('(prefers-color-scheme: light)').matches)root.dataset.theme='light';
+else if(matchMedia('(prefers-color-scheme: dark)').matches)root.dataset.theme='dark';
 const DESKTOP=!!(window.charta&&window.charta.desktop);
 const DEBUG=!!window.__CHARTA_DEBUG__;
 
+// One icon language: the server ships the Lucide bodies, we wrap them here.
+const icon=(name,size=18)=>{const body=(window.__ICONS__||{})[name];if(!body)return '';
+ return '<svg viewBox="0 0 24 24" width="'+size+'" height="'+size+'" fill="none" stroke="currentColor"'
+  +' stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+body+'</svg>';};
+const escHtml=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function paintThemeIcon(){
+ const dark=root.dataset.theme==='dark';
+ const i=document.querySelector('[data-theme-icon]');if(i)i.innerHTML=icon(dark?'sun':'moon');
+ const l=document.querySelector('[data-theme-label]');if(l)l.textContent=dark?'Light theme':'Dark theme';
+}
 window.toggleTheme=()=>{
  root.dataset.theme=root.dataset.theme==='light'?'dark':'light';
- localStorage.setItem('charta-theme',root.dataset.theme||'dark');
+ localStorage.setItem('charta-theme',root.dataset.theme||'light');
  if(DESKTOP)window.charta.setTheme(root.dataset.theme); // keep the native title bar in sync
+ paintThemeIcon();
 };
-if(DESKTOP)window.charta.setTheme(root.dataset.theme||'dark');
+if(DESKTOP)window.charta.setTheme(root.dataset.theme||'light');
+paintThemeIcon();
 
 // --- native-feel: take the browser's own chrome shortcuts away --------------
 // Electron also blocks these at the window level (desktop/main.js); this covers
@@ -87,9 +100,9 @@ async function fsList(path){
  PICKER.path=j.path;
  const pathEl=document.getElementById('fsPath');if(pathEl)pathEl.textContent=j.path;
  const ul=document.getElementById('fsList');ul.innerHTML='';
- (j.roots||[]).filter(d=>d!==j.path).forEach(d=>ul.appendChild(fsRow('💽 '+d,()=>fsList(d))));
- (j.dirs||[]).forEach(name=>ul.appendChild(fsRow('📁 '+name,()=>fsList(joinPath(j.path,name)))));
- if(!j.dirs.length)ul.appendChild(fsRow('(no subfolders)',null));
+ (j.roots||[]).filter(d=>d!==j.path).forEach(d=>ul.appendChild(fsRow('drive',d,()=>fsList(d))));
+ (j.dirs||[]).forEach(name=>ul.appendChild(fsRow('folder',name,()=>fsList(joinPath(j.path,name)))));
+ if(!j.dirs.length)ul.appendChild(fsRow('empty','(no subfolders)',null));
  const use=document.getElementById('fsUse');if(use)use.disabled=!!j.protected;
  const up=document.getElementById('fsUp');
  if(up){up.disabled=!j.parent;up.onclick=()=>j.parent&&fsList(j.parent);}
@@ -98,8 +111,10 @@ async function fsList(path){
   ?'Charta protects system folders — pick a folder inside your documents instead.'
   :(j.error||'');
 }
-function fsRow(label,go){
- const li=document.createElement('li');li.textContent=label;li.tabIndex=0;
+function fsRow(iconName,label,go){
+ const li=document.createElement('li');
+ li.innerHTML='<span class="icon">'+icon(iconName,16)+'</span><span>'+escHtml(label)+'</span>';
+ li.tabIndex=0;
  if(go){li.onclick=go;li.onkeydown=e=>{if(e.key==='Enter')go();};}else{li.className='muted';}
  return li;
 }
@@ -172,11 +187,11 @@ window.loadOutput=async(button,kind)=>{
  grid.dataset.kind=sort;
  let data;
  try{data=await api('/api/outputs/rows?folder='+encodeURIComponent(folder())+'&kind='+sort+'&t='+Date.now());}
- catch(err){grid.innerHTML='<div class="empty"><div class="glyph">◌</div><h3>No output yet</h3><p>Press Rebuild now.</p></div>';return;}
- if(data.error){grid.innerHTML='<div class="banner warn">'+data.error+'</div>';return;}
+ catch(err){grid.innerHTML='<div class="empty"><div class="glyph">'+icon('empty',28)+'</div><h3>No output yet</h3><p>Press Rebuild now.</p></div>';return;}
+ if(data.error){grid.innerHTML='<div class="banner warn"><span class="icon">'+icon('alert',16)+'</span>'+escHtml(data.error)+'</div>';return;}
  if(!data.rows||!data.rows.length){
-  grid.innerHTML='<div class="empty"><div class="glyph">▦</div><h3>Nothing here yet</h3>'
-   +'<p>No rows in <span class="mono">'+sort+'</span>. Approve a file or press Rebuild now.</p></div>';return;}
+  grid.innerHTML='<div class="empty"><div class="glyph">'+icon('outputs',28)+'</div><h3>Nothing here yet</h3>'
+   +'<p>No rows in <span class="mono">'+escHtml(sort)+'</span>. Approve a file or press Rebuild now.</p></div>';return;}
  const cols=data.columns||[];
  let rows=data.rows.slice();
  if(SORT.key!==null&&sort===grid.dataset.sortKind){const i=SORT.key;
@@ -186,7 +201,7 @@ window.loadOutput=async(button,kind)=>{
   +'<span class="muted caption">'+sort+'</span><span class="spacer"></span>'
   +'<span class="muted caption">click a header to sort</span></div>'
   +'<div style="max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-in)"><table class="grid"><thead><tr>'
-  +cols.map((c,i)=>'<th scope="col"><button class="sort-btn" onclick="sortOutput('+i+')">'+c+' ⇅</button></th>').join('')
+  +cols.map((c,i)=>'<th scope="col"><button class="sort-btn" onclick="sortOutput('+i+')">'+escHtml(c)+' <span class="icon">'+icon('sort',13)+'</span></button></th>').join('')
   +'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+(r[cols.indexOf(c)]||'')+'</td>').join('')+'</tr>').join('')
   +'</tbody></table></div>';
 };

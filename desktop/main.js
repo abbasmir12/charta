@@ -15,7 +15,13 @@ const windowState = require('./lib/window-state');
 
 const APP_ID = 'Charta.FolderWatcher';
 const TITLE = 'Charta';
-const BG = '#0B0D12';
+// Window chrome must match the renderer's default dim-white theme (tokens.css),
+// otherwise a dark title bar flashes over light content before first paint.
+const CHROME = {
+  light: { bg: '#F4F4F2', symbol: '#1A1B1F' },
+  dark: { bg: '#0C0D10', symbol: '#EDEEF2' },
+};
+const chromeFor = (dark) => (dark ? CHROME.dark : CHROME.light);
 const ROUTES = ['/', '/overview', '/review', '/outputs', '/gaps', '/ask', '/activity', '/settings', '/styleguide'];
 
 const arg = (name, fallback = '') => {
@@ -43,7 +49,8 @@ function stateFile() {
   return paths.windowStateFile();
 }
 
-function windowOptions(bounds, mica) {
+function windowOptions(bounds, mica, dark) {
+  const chrome = chromeFor(dark);
   const base = {
     title: TITLE,
     width: bounds.width,
@@ -53,7 +60,7 @@ function windowOptions(bounds, mica) {
     minWidth: 480,
     minHeight: 360,
     show: false,
-    backgroundColor: BG,
+    backgroundColor: chrome.bg,
     autoHideMenuBar: true,
     icon: fs.existsSync(paths.iconPath()) ? paths.iconPath() : undefined,
     webPreferences: {
@@ -67,7 +74,7 @@ function windowOptions(bounds, mica) {
   };
   if (process.platform === 'win32' || process.platform === 'linux') {
     base.titleBarStyle = 'hidden';
-    base.titleBarOverlay = { color: BG, symbolColor: '#E8EAF0', height: 40 };
+    base.titleBarOverlay = { color: chrome.bg, symbolColor: chrome.symbol, height: 40 };
   } else {
     base.titleBarStyle = 'hiddenInset';
   }
@@ -76,14 +83,15 @@ function windowOptions(bounds, mica) {
 }
 
 function createWindow(bounds, url) {
-  let options = windowOptions(bounds, true);
+  const dark = nativeTheme.shouldUseDarkColors;
+  let options = windowOptions(bounds, true, dark);
   let created;
   try {
     created = new BrowserWindow(options);
   } catch (err) {
     // Older Windows builds reject backgroundMaterial; keep the window either way.
     log(`backgroundMaterial unavailable (${err.message}); retrying without Mica`);
-    options = windowOptions(bounds, false);
+    options = windowOptions(bounds, false, dark);
     created = new BrowserWindow(options);
   }
   win = created;
@@ -156,12 +164,14 @@ function log(message) {
 }
 
 function applyTheme(target, theme) {
-  nativeTheme.themeSource = theme === 'light' ? 'light' : 'dark';
+  const dark = theme !== 'light';
+  nativeTheme.themeSource = dark ? 'dark' : 'light';
   if (process.platform === 'win32' || process.platform === 'linux') {
+    const chrome = chromeFor(dark);
     try {
       target.setTitleBarOverlay({
-        color: theme === 'light' ? '#FFFFFF' : BG,
-        symbolColor: theme === 'light' ? '#141824' : '#E8EAF0',
+        color: chrome.bg,
+        symbolColor: chrome.symbol,
         height: 40,
       });
     } catch (err) { /* older Electron: title bar simply keeps its initial colors */ }
@@ -277,7 +287,7 @@ async function main() {
 
   await app.whenReady();
   app.setAppUserModelId(APP_ID); // one taskbar entry, not "electron.exe"
-  nativeTheme.themeSource = 'dark';
+  nativeTheme.themeSource = 'system'; // renderer follows the OS too (app.js)
   if (await boot() !== 0) { app.quit(); return 1; }
 
   const bounds = windowState.load(stateFile());

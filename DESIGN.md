@@ -1,34 +1,41 @@
 # DESIGN.md — Charta visual source of truth
 
 > Any UI change must follow this file. Source of truth page: `/styleguide`.
-> Personality: calm, premium, a little magical. Native Windows 11 × Linear ×
-> Raycast: dark-first, glassy, fast, restrained glow, never cluttered.
+> Personality: calm, professional, quietly premium. Native Windows 11 × Linear
+> × Notion: light-first dim-white canvas, hairline borders, one calm indigo
+> accent, generous spacing, nothing decorative for its own sake.
 > Promise: "your messy folder quietly sorts itself, and you stay in control"
 > — always show what the AI is doing; nothing moves without approval.
 
 ## 1. Tokens (`web/static/tokens.css`, CSS variables)
 
-- Themes: `dark` (default) + `light`, follow OS (`prefers-color-scheme`),
-  manual toggle persisted in `localStorage` (`charta-theme`).
-- Dark: `--bg:#0B0D12; --surface:#12151C; --raised:#181C25;`
-  `--border:rgba(255,255,255,0.08); --text:#E8EAF0; --muted:#8B93A7;`
-- Light: `--bg:#F6F7F9; --surface:#FFFFFF; --raised:#EEF1F6;`
-  `--border:rgba(10,15,30,0.10); --text:#141824; --muted:#5B6478;`
-- Accent gradient: `#7C5CFF → #22D3EE`. Sparingly: primary buttons,
-  focus rings, active states, mic pulse, logo mark.
-- Semantics: `--success:#34D399; --warning:#FBBF24; --danger:#F87171;
-  --info:#60A5FA;` Always pair color with icon/label (never color alone).
+- Themes: `light` (default, dim white) + `dark`. The OS choice is honoured
+  until the user picks one; the toggle is persisted in `localStorage`
+  (`charta-theme`). `:root` holds the dark palette; `[data-theme="light"]`
+  overrides every token, so both themes are contrast-checked independently.
+- Dim white (light): `--bg:#F4F4F2; --surface:#FFFFFF; --raised:#F1F1EF;
+  --sunken:#EBEBE8; --border:rgba(24,24,28,0.10); --text:#1A1B1F;
+  --muted:#5B5F6B;`
+- Dark: `--bg:#0C0D10; --surface:#141519; --raised:#1B1D22; --sunken:#0F1013;`
+  `--border:rgba(255,255,255,0.08); --text:#EDEEF2; --muted:#9BA1AE;`
+- Accent: one calm indigo — `#4F46E5` (light) / `#818CF8` (dark), with a
+  darker `--accent2` for links. **No gradient.** Used sparingly: primary
+  buttons, focus rings, active nav, icon accents, logo mark.
+- Semantics: light `--success:#047857; --warning:#B45309; --danger:#B91C1C;
+  --info:#1D4ED8;` with brighter dark-theme values. Always pair colour with an
+  icon/label (never colour alone).
 - Radius: cards 12px, inputs/buttons 8px, chips 999px.
-- Spacing: 4px scale (4,8,12,16,24,32,48).
-- Shadows: soft layered + 1px inner highlight on glass.
-- Glass: `backdrop-filter: blur(16px)` only on sidebar, palette, modals;
+- Spacing: 4px scale (4,8,12,16,24,32,48) — `--s1..--s7`, never a raw pixel.
+- Shadows: soft, neutral, layered elevation — never a coloured glow.
+- Glass: `backdrop-filter: blur(20px)` only on the command palette/modals;
   solid fallback via `@supports not (backdrop-filter: blur(1px))`.
-- Typography: Inter (UI) + JetBrains Mono (paths/JSON/logs), bundled in
-  `/static/fonts/` (no CDN), system fallback.
-  Scale: 12,14,16,20,28,40px.
-- Icons: Lucide, inlined SVG, 1.5px stroke.
-- Motion: 150–250ms ease-out micro; 400–600ms signature.
-  `prefers-reduced-motion`: fades only (disable fly/tree/pulse).
+- Typography: Windows-first system stack (Segoe UI Variable → system-ui) with
+  Cascadia Code/ui-monospace for paths, JSON and logs. No CDN, no bundled fonts.
+  Scale: 11,12,13,14,16,20,28px.
+- Icons: Lucide, inlined SVGs from `web/icons.py` (`icon(name, size)`),
+  1.75px stroke, `currentColor`. No emoji/unicode glyphs in the chrome.
+- Motion: 150–250ms ease-out micro; 420ms entrance with a 40ms stagger.
+  `prefers-reduced-motion`: animation/transition disabled.
 
 ## 2. Component rules
 
@@ -112,11 +119,15 @@ Tokens live in `static/tokens.css`; `static/app.css` only composes them.
 - Both themes are contrast-checked (WCAG AA 4.5:1 text, 3:1 accents) by
   `tests/test_design.py`, which also fails on any `var(--token)` that is not
   defined and on a spacing scale that leaves the 4px grid.
+- Icons come from `charta/web/icons.py` (`icons.svg`), regenerated from
+  lucide-static by `tools/fetch_icons.py`; the renderer reads the same bodies
+  from `window.__ICONS__`, so JS-built markup keeps one icon language.
 - Clickable chips and sort headers carry a >= 24px hit area (WCAG 2.2 SC 2.5.8),
   enforced by `tools/ui_check.py` in a real browser.
 - Shell: one `.appbar` serves as an ordinary header in a browser and as the
   draggable Electron title bar (`html[data-shell="electron"]`), 40px tall to
-  match `titleBarOverlay.height`.
+  match `titleBarOverlay.height`; `desktop/main.js`'s `CHROME` colours mirror
+  these tokens so the native title bar never flashes a mismatched theme.
 
 ## 6. Signature moments (demo video)
 

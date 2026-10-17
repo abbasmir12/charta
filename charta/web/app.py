@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import icons
 from ..core import applog
 from ..core import fsbrowse
 from ..core import journal as journal_mod
@@ -80,6 +81,14 @@ def folder_picker_html() -> str:
 
 
 NAV_ITEMS = ["overview", "review", "outputs", "gaps", "ask", "activity", "settings"]
+NAV_LABELS = {"overview": "Overview", "review": "Review", "outputs": "Outputs",
+              "gaps": "Gaps", "ask": "Ask", "activity": "Activity", "settings": "Settings"}
+LOCAL_PROVIDERS = ("ollama", "lmstudio", "llamacpp", "vllm")
+
+
+def icon(name: str, size: int = 18) -> str:
+    """Inline icon by semantic name (see charta/web/icons.py)."""
+    return icons.svg(name, size)
 
 
 def shell(page: str, folder: str, inner: str, mode: str = "suggest") -> str:
@@ -88,56 +97,56 @@ def shell(page: str, folder: str, inner: str, mode: str = "suggest") -> str:
     The same markup is an ordinary header in a browser and the draggable window
     title bar inside Electron (desktop/preload.js sets data-shell).
     """
-    pill = ('<span class="chip pill-suggest">Suggest mode: nothing moves without you</span>'
+    pill = ('<span class="chip pill-suggest">Suggest · nothing moves without you</span>'
             if mode != "auto" else '<span class="chip pill-auto">Auto mode</span>')
     provider = _cfg().llm_provider
-    privacy = ("100% local" if provider in ("ollama", "lmstudio", "llamacpp", "vllm")
-               else f"cloud: {provider}")
+    if provider in LOCAL_PROVIDERS:
+        privacy = ('<span class="chip" title="Where the AI runs is set by [llm] in config.toml.">'
+                   f'<span class="icon">{icon("shield", 14)}</span> 100% local</span>')
+    else:
+        privacy = (f'<span class="chip" title="This folder sends text to {provider}.">'
+                   f'<span class="icon">{icon("info", 14)}</span> cloud: {provider}</span>')
     debug = _debug()
     fq = quote(folder)  # folder paths contain spaces, & and backslashes
     nav = "".join(
         f'<a href="/{n}?folder={fq}" class="{"active" if page == n else ""}"'
         f'{" aria-current=\"page\"" if page == n else ""}>'
-        f'<span class="icon" aria-hidden="true">{icon(n)}</span> {n.title()}</a>'
+        f'<span class="icon">{icon(n)}</span> {NAV_LABELS[n]}</a>'
         for n in NAV_ITEMS)
-    return f"""<!doctype html><html data-theme="dark"><head><meta charset="utf-8">
+    return f"""<!doctype html><html data-theme="light"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="dark light"><title>Charta — {page.title()}</title>
+<meta name="color-scheme" content="light dark"><title>Charta — {page.title() if page else 'Setup'}</title>
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="stylesheet" href="/static/tokens.css"><link rel="stylesheet" href="/static/app.css">
-<script>window.__CHARTA_DEBUG__={"true" if debug else "false"};</script></head>
+<script>window.__CHARTA_DEBUG__={"true" if debug else "false"};window.__ICONS__={icons.manifest()};</script></head>
 <body>
 <header class="appbar" id="appbar">
-<span class="brand"><span class="mark" aria-hidden="true">◈</span> Charta</span>
+<span class="brand"><span class="mark" aria-hidden="true">{icon("sparkles", 13)}</span> Charta</span>
 <span class="path mono" title="{folder}">{folder or 'no folder'}</span>{pill}
 <span id="thinking" class="path" role="status" aria-live="polite">{THINKING['msg']}</span>
 <span class="spacer"></span>
-<span class="chip" title="Where the AI runs is set by [llm] in config.toml — local by default.">{privacy}</span>
+{privacy}
 <span class="kbd" title="Command palette">Ctrl K</span>
 </header>
 <div class="layout">
 <nav class="sidebar" aria-label="Main">
 <div class="section caption">Folder</div>
-<div class="chip"><span class="dot dot-idle" aria-hidden="true"></span>{folder or 'none yet'}</div>
+<div class="chip" title="{folder}"><span class="dot dot-idle" aria-hidden="true"></span>{folder or 'none yet'}</div>
 <div class="section caption">Workspace</div>{nav}
 <div class="foot">
-<button type="button" onclick="toggleTheme()"><span class="icon" aria-hidden="true">◐</span> Theme</button>
-<a href="/?folder={fq}"><span class="icon" aria-hidden="true">＋</span> New charter</a>
+<button type="button" onclick="toggleTheme()"><span class="icon" data-theme-icon>{icon("moon")}</span> <span data-theme-label>Dark theme</span></button>
+<a href="/?folder={fq}"><span class="icon">{icon("folder-add")}</span> New charter</a>
 </div></nav>
 <main class="main content">{inner}</main></div>
 <div id="palette" role="dialog" aria-modal="true" aria-label="Command palette">
 <div class="card glass"><input id="palInput" type="text" placeholder="Type a command…" oninput="palFilter(this.value)" aria-label="Commands">
-<div id="palList" class="stack"><button type="button" class="btn btn-ghost" onclick="location.href='/review?folder={fq}'">Approve all</button>
-<button type="button" class="btn btn-ghost" onclick="undoLast()">Undo last move</button>
-<button type="button" class="btn btn-ghost" onclick="location.href='/ask?folder={fq}'">Ask the folder</button>
-<button type="button" class="btn btn-ghost" onclick="location.href='/outputs?folder={fq}'">Rebuild outputs</button>
-<button type="button" class="btn btn-ghost" onclick="closePalette()">Close</button></div></div></div>
+<div id="palList" class="stack">
+<button type="button" class="btn btn-ghost" onclick="location.href='/review?folder={fq}'"><span class="icon">{icon("check")}</span> Approve all</button>
+<button type="button" class="btn btn-ghost" onclick="undoLast()"><span class="icon">{icon("undo")}</span> Undo last move</button>
+<button type="button" class="btn btn-ghost" onclick="location.href='/ask?folder={fq}'"><span class="icon">{icon("ask")}</span> Ask the folder</button>
+<button type="button" class="btn btn-ghost" onclick="location.href='/outputs?folder={fq}'"><span class="icon">{icon("outputs")}</span> Rebuild outputs</button>
+<button type="button" class="btn btn-ghost" onclick="closePalette()"><span class="icon">{icon("close")}</span> Close</button></div></div></div>
 <script src="/static/app.js"></script></body></html>"""
-
-
-def icon(name: str) -> str:
-    return {"overview": "◫", "review": "☑", "outputs": "▦", "gaps": "◌",
-            "ask": "✎", "activity": "🕘", "settings": "⚙"}.get(name, "•")
 
 
 def page_head(title: str, sub: str = "", actions: str = "") -> str:
@@ -146,8 +155,8 @@ def page_head(title: str, sub: str = "", actions: str = "") -> str:
             f'{f"<div class=\"actions\">{actions}</div>" if actions else ""}</div>')
 
 
-def empty_state(glyph: str, title: str, body: str, action: str = "") -> str:
-    return (f'<div class="card empty"><div class="glyph" aria-hidden="true">{glyph}</div>'
+def empty_state(name: str, title: str, body: str, action: str = "") -> str:
+    return (f'<div class="card empty"><div class="glyph" aria-hidden="true">{icon(name, 28)}</div>'
             f'<h3>{title}</h3><p>{body}</p>{action}</div>')
 
 
@@ -161,25 +170,26 @@ def setup(folder: str = "") -> str:
     mode_dd = dropdown("mode", [("suggest", "Suggest mode — nothing moves without you"),
                                ("auto", "Auto mode — move new files automatically")], "suggest")
     inner = f"""<div class="card setup-card">
-<div class="chip mono">folder: <span id="fchip">{initial}</span>
-<button type="button" class="btn btn-ghost" onclick="openPicker()">Choose folder…</button></div>
+<div class="setup-row"><span class="chip mono" title="{initial}">folder: <span id="fchip">{initial}</span></span>
+<button type="button" class="btn" onclick="openPicker()"><span class="icon">{icon("folder", 16)}</span> Choose folder…</button></div>
 <h1>What is this folder for?</h1>
 <textarea id="purpose" rows="4" placeholder="Lecture PDFs and study screenshots…" aria-label="What is this folder for?"></textarea>
 <div class="setup-row">
-<button id="micBtn" class="mic-ring" onclick="toggleMic('purpose')" aria-label="Hold to talk">◉</button>{chips}</div>
+<button id="micBtn" class="mic-ring" onclick="toggleMic('purpose')" aria-label="Hold to talk">{icon("mic", 22)}</button>
+<div class="chips">{chips}</div></div>
 <div class="setup-row"><label class="label" for="mode">Mode</label>{mode_dd}
 <input id="folder" type="text" class="manual-path" aria-label="Folder path"
  placeholder="or paste a path" value="{initial}"></div>
-<button class="btn btn-primary" onclick="createCharter()">Create charter</button>
+<button class="btn btn-primary" onclick="createCharter()"><span class="icon">{icon("sparkles", 16)}</span> Create charter</button>
 <div id="out" role="status" aria-live="polite"></div></div>
 {folder_picker_html()}"""
-    return shell("overview", "", inner)
+    return shell("", "", inner)
 
 
 @app.get("/protected", response_class=HTMLResponse)
 def protected(folder: str = "", reason: str = "") -> str:
     inner = f"""<div class="card refusal" role="alert">
-<div class="refusal-mark" aria-hidden="true">🛡</div>
+<div class="refusal-mark" aria-hidden="true">{icon("shield", 40)}</div>
 <h1>Charta won't watch this folder</h1>
 <p class="mono">{folder or '(no folder)'}</p>
 <p>{reason or 'It is a system or profile location — like Windows, Program Files, AppData, a drive root, or your user folder root.'}</p>
@@ -187,7 +197,7 @@ def protected(folder: str = "", reason: str = "") -> str:
 for example <span class="mono">Documents/Receipts</span>.</p>
 <button type="button" class="btn btn-primary" onclick="location.href='/'">Choose another folder</button>
 </div>"""
-    return shell("overview", "", inner)
+    return shell("", "", inner)
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -199,16 +209,26 @@ def favicon() -> Response:
 
 @app.get("/styleguide", response_class=HTMLResponse)
 def styleguide() -> str:
-    inner = """<h1>Styleguide</h1><div class="cards">
-<div class="card"><h3>Tokens</h3><div class="chip">chip</div> <span class="chip pill-suggest">suggest</span>
-<span class="chip pill-auto">auto</span> <span class="badge-sensitive">sensitive</span></div>
-<div class="card"><h3>Buttons</h3><button class="btn btn-primary">Primary</button>
-<button class="btn">Default</button><button class="btn btn-ghost">Ghost</button></div>
+    swatches = "".join(
+        f'<span class="chip"><span class="dot" style="background:var(--{name})"></span>{name}</span>'
+        for name in ["accent1", "success", "warning", "danger", "info"])
+    icon_row = " ".join(f'<span class="icon" title="{n}">{icon(n, 20)}</span>'
+                        for n in NAV_ITEMS + ["folder", "file", "undo", "shield", "search", "mic"])
+    inner = f"""<h1>Styleguide</h1><div class="cards">
+<div class="card"><h3>Colour</h3><div class="row">{swatches}</div></div>
+<div class="card"><h3>Icons</h3><div class="row" style="gap:var(--s4);color:var(--text)">{icon_row}</div></div>
+<div class="card"><h3>Chips &amp; pills</h3><div class="row"><div class="chip">chip</div>
+<span class="chip pill-suggest">suggest</span><span class="chip pill-auto">auto</span>
+<span class="badge-sensitive">sensitive</span></div></div>
+<div class="card"><h3>Buttons</h3><div class="row"><button class="btn btn-primary"><span class="icon">{icon("sparkles", 16)}</span> Primary</button>
+<button class="btn">Default</button><button class="btn btn-ghost">Ghost</button>
+<button class="btn btn-icon" aria-label="Icon button">{icon("plus", 16)}</button></div></div>
 <div class="card"><h3>Confidence</h3><div class="conf"><span style="width:72%"></span></div>
-<div class="skel">skeleton loader</div></div>
-<div class="card"><h3>Empty state</h3><p>◌ Nothing here yet.</p><button class="btn">Next action</button></div>
+<div class="skel" style="margin-top:var(--s3)">skeleton loader</div></div>
+<div class="card empty" style="padding:var(--s5)"><div class="glyph">{icon("empty", 28)}</div>
+<h3>Empty state</h3><p>Nothing here yet.</p><button class="btn">Next action</button></div>
 </div>"""
-    return shell("overview", "", inner)
+    return shell("", "", inner)
 
 
 def _page(folder: str, name: str) -> tuple[Any, str]:
@@ -241,30 +261,34 @@ def overview(folder: str = "") -> str:
     fq = quote(folder)
     purpose = ch.purpose if ch else "no charter yet"
     offline = "" if _provider_up() else (
-        '<div class="banner warn"><span aria-hidden="true">◌</span><span>The AI engine is offline, so '
+        f'<div class="banner warn"><span class="icon">{icon("alert", 16)}</span><span>The AI engine is offline, so '
         'classification falls back to built-in rules. Start it, then reload.</span>'
-        '<a class="btn" href="/settings">Settings</a></div>')
+        '<span class="spacer"></span><a class="btn" href="/settings">Settings</a></div>')
     stats = "".join(
-        f'<div class="card stat"><div class="n">{value}</div><div class="k">{label}</div></div>'
-        for value, label in [(len(props), "files tracked"), (len(pend), "waiting for review"),
-                             (len(miss), "gaps found"),
-                             (len(journal_mod.entries(folder)) if folder else 0, "moves logged")])
-    next_action = (f'<a class="btn btn-primary" href="/review?folder={fq}">Review {len(pend)}</a>'
-                   if pend else '<a class="btn" href="/outputs?folder={fq}">Open outputs</a>')
+        f'<div class="card stat"><div class="n">{value}</div>'
+        f'<div class="k"><span class="icon">{icon(ic, 15)}</span>{label}</div></div>'
+        for value, label, ic in [
+            (len(props), "files tracked", "stack"),
+            (len(pend), "waiting for review", "review"),
+            (len(miss), "gaps found", "gaps"),
+            (len(journal_mod.entries(folder)) if folder else 0, "moves logged", "activity")])
+    next_action = (f'<a class="btn btn-primary" href="/review?folder={fq}"><span class="icon">{icon("review", 16)}</span> Review {len(pend)}</a>'
+                   if pend else f'<a class="btn" href="/outputs?folder={fq}"><span class="icon">{icon("outputs", 16)}</span> Open outputs</a>')
     inner = f"""{page_head("Overview", purpose, next_action)}
 {offline}<div class="cards">{stats}</div>
 <div class="card thinking"><span class="pulse" aria-hidden="true"></span>
+<span class="icon">{icon("sparkles", 16)}</span>
 <span><strong>Charta is thinking:</strong> <span id="live">{THINKING['msg']}</span></span></div>
 <div class="cards wide">
 <div class="card"><div class="card-head"><h3>Needs your review</h3>{mode_pill(mode)}</div>
 <p class="muted">{f'{len(pend)} proposal(s) waiting' if pend else 'Nothing waiting — you are up to date.'}</p>
-<a class="btn" href="/review?folder={fq}">Open review</a></div>
+<a class="btn" href="/review?folder={fq}"><span class="icon">{icon("review", 16)}</span> Open review</a></div>
 <div class="card"><div class="card-head"><h3>Missing items</h3></div>
-<p class="muted">{'; '.join(g.note for g in miss[:3]) or 'Nothing missing 🎉'}</p>
-<a class="btn" href="/gaps?folder={fq}">Check gaps</a></div>
+<p class="muted">{'; '.join(g.note for g in miss[:3]) or 'Nothing missing.'}</p>
+<a class="btn" href="/gaps?folder={fq}"><span class="icon">{icon("gaps", 16)}</span> Check gaps</a></div>
 <div class="card"><div class="card-head"><h3>Latest outputs</h3></div>
 <p class="muted">Spreadsheet, notes and tables built from this folder.</p>
-<a class="btn" href="/outputs?folder={fq}">View outputs</a></div></div>"""
+<a class="btn" href="/outputs?folder={fq}"><span class="icon">{icon("outputs", 16)}</span> View outputs</a></div></div>"""
     return shell("overview", folder, inner, mode)
 
 
@@ -276,33 +300,33 @@ def review(folder: str = "") -> str:
     pending = [p for p in props if p.status == "pending"]
     if not pending:
         return shell("review", folder, page_head("Review", "Nothing is moved until you approve it.")
-                     + empty_state("☑", "All clear", "No proposals waiting. Drop a file into the folder and "
+                     + empty_state("check", "All clear", "No proposals waiting. Drop a file into the folder and "
                                     "Charta will suggest where it belongs.",
-                                    f'<a class="btn" href="/overview?folder={fq}">Back to overview</a>'), mode)
+                                    f'<a class="btn" href="/overview?folder={fq}"><span class="icon">{icon("overview", 16)}</span> Back to overview</a>'), mode)
     cards = ""
     for p in pending:
         sens = '<span class="badge-sensitive">sensitive</span>' if p.sensitive else ""
         cards += f"""<div class="card prop-card fadein"><div class="prop">
-<span class="thumb" aria-hidden="true">📄</span><div style="flex:1;min-width:0">
+<span class="thumb" aria-hidden="true">{icon("file", 20)}</span><div style="flex:1;min-width:0">
 <div class="mono">{p.source} <span class="dest">→ {p.dest_dir}/{p.new_name}</span></div>
 <div class="conf" role="img" aria-label="confidence {int(p.confidence*100)} percent"><span style="width:{int(p.confidence*100)}%"></span></div>
 <p class="reason">{p.reason}</p>{sens}
-<div class="row"><button class="btn btn-primary" onclick="approveOne({p.source!r})">Approve <span class="kbd">A</span></button>
-<button class="btn" onclick="rejectOne({p.source!r})">Reject <span class="kbd">R</span></button>
-<button class="btn btn-ghost" onclick="toast({p.reason!r},false)">Why?</button></div>
+<div class="row"><button class="btn btn-primary" onclick="approveOne({p.source!r})"><span class="icon">{icon("check", 16)}</span> Approve <span class="kbd">A</span></button>
+<button class="btn" onclick="rejectOne({p.source!r})"><span class="icon">{icon("close", 16)}</span> Reject <span class="kbd">R</span></button>
+<button class="btn btn-ghost" onclick="toast({p.reason!r},false)"><span class="icon">{icon("info", 16)}</span> Why?</button></div>
 </div></div></div>"""
-    tree = ("<div class='tree'>📁 " + (folder or ".") + "<br>"
+    tree = ("<div class='tree'>" + icon("folder", 15) + " " + (folder or ".") + "<br>"
             + "<br>".join("└─ " + p.dest_dir + "/" + p.new_name for p in pending[:8]) + "</div>")
     approve_all = (f"fetch('/api/approve?folder={fq}',{{method:'POST',headers:{{'Content-Type':'application/json'}},"
                    "body:JSON.stringify({all:true})}).then(()=>location.reload())")
     inner = f"""{page_head("Review", f"{len(pending)} proposal(s) — nothing moves without you.",
-        f'<button class="btn" onclick="undoLast()">Undo last move</button>'
-        f'<button class="btn btn-primary" onclick="{approve_all}">Approve all</button>')}
+        f'<button class="btn" onclick="undoLast()"><span class="icon">{icon("undo", 16)}</span> Undo last move</button>'
+        f'<button class="btn btn-primary" onclick="{approve_all}"><span class="icon">{icon("check", 16)}</span> Approve all</button>')}
 <div class="legend"><span><span class="kbd">J</span>/<span class="kbd">K</span> move</span>
 <span><span class="kbd">A</span> approve</span><span><span class="kbd">R</span> reject</span>
 <span><span class="kbd">Esc</span> close</span></div>
 <div class="stack">{cards}</div>
-<h3 style="margin-top:var(--s5)">Before → after preview</h3>{tree}"""
+<h3 class="section-title">Before → after preview</h3>{tree}"""
     return shell("review", folder, inner, mode)
 
 
@@ -318,7 +342,7 @@ def outputs(folder: str = "") -> str:
     rebuild = (f"fetch('/api/outputs?folder={fq}',{{method:'POST'}}).then(r=>r.json())"
                ".then(j=>{document.getElementById('o').textContent=JSON.stringify(j,null,2);loadOutput()})")
     inner = f"""{page_head("Outputs", (ch.purpose if ch else "Build a spreadsheet, notes and tables from this folder."),
-        f'<button class="btn" onclick="{rebuild}">Rebuild now</button>')}
+        f'<button class="btn" onclick="{rebuild}"><span class="icon">{icon("scan", 16)}</span> Rebuild now</button>')}
 <div class="card"><div class="tabbar" role="tablist" aria-label="Output type">{tabs}</div>
 <div id="outGrid"><div class="skel" style="height:88px">loading outputs…</div></div>
 <details style="margin-top:var(--s4)"><summary class="muted">Rebuild details</summary>
@@ -335,12 +359,12 @@ def gaps(folder: str = "") -> str:
     fq = quote(folder)
     rows = "".join(
         f'<div class="card gap {"found" if g.found else "missing"}">'
-        f'<span aria-hidden="true">{"✅" if g.found else "◌"}</span>'
+        f'<span class="icon">{icon("check", 16) if g.found else icon("empty", 16)}</span>'
         f'<span>{g.note}</span></div>' for g in items)
     if not rows:
-        body = empty_state("◌", "No expectations declared",
+        body = empty_state("gaps", "No expectations declared",
                            "Add an \"Expected items\" list to the charter and Charta will tell you what is missing.",
-                           f'<a class="btn" href="/?folder={fq}">Edit charter</a>')
+                           f'<a class="btn" href="/?folder={fq}"><span class="icon">{icon("folder-add", 16)}</span> Edit charter</a>')
     else:
         body = f'<div class="stack">{rows}</div>'
     ring = (f'<div class="ring" style="--pct:{pct}" role="img" '
@@ -362,8 +386,8 @@ def ask_page(folder: str = "") -> str:
 <div class="chatlog" id="log" role="log" aria-live="polite">
 <div class="msg ai">Ask anything about this folder — I quote the file and page I used, and I won't invent an answer.</div></div>
 <div class="row"><input id="q" type="text" aria-label="Your question" placeholder="e.g. What electricity bills do we have for March?">
-<button type="button" class="btn btn-icon" onclick="toggleMic('q')" aria-label="Ask by voice">◉</button>
-<button type="button" class="btn btn-primary" onclick="askFolder()">Ask</button></div>
+<button type="button" class="btn btn-icon" onclick="toggleMic('q')" aria-label="Ask by voice">{icon("mic", 18)}</button>
+<button type="button" class="btn btn-primary" onclick="askFolder()"><span class="icon">{icon("arrow-right", 16)}</span> Ask</button></div>
 <div class="row" style="margin-top:var(--s3)">{starters}</div>
 <div id="ans"></div>"""
     return shell("ask", folder, inner, mode)
@@ -375,12 +399,12 @@ def activity(folder: str = "") -> str:
     entries = list(reversed(journal_mod.entries(folder))) if folder else []
     rows = "".join(
         f'<div class="card"><div class="row"><span class="chip mono">{e.get("ts", "")}</span>'
-        f'<span class="spacer"></span><button class="btn btn-ghost" onclick="undoLast()">Undo</button></div>'
+        f'<span class="spacer"></span><button class="btn btn-ghost" onclick="undoLast()"><span class="icon">{icon("undo", 16)}</span> Undo</button></div>'
         f'<p class="mono">{e.get("src", "")} → {e.get("dst", "")}</p>'
         f'<p class="muted">{e.get("reason", "")}</p></div>'
         for e in entries)
     if not rows:
-        rows = empty_state("🕘", "No activity yet",
+        rows = empty_state("history", "No activity yet",
                            "Every move lands here with the reason it was made, and each one can be undone.")
     inner = f"""{page_head("Activity", "Every change Charta made, newest first.")}
 <div class="stack">{rows}</div>"""
@@ -396,20 +420,20 @@ def settings(folder: str = "", req: Request = None) -> str:  # type: ignore[assi
     shell_kind = "Electron desktop" if "Electron" in user_agent else "browser"
     inner = f"""{page_head("Settings", "Everything here lives in config.toml on your machine.")}
 <div class="cards wide">
-<div class="card"><div class="card-head"><h3>AI provider</h3>
+<div class="card"><div class="card-head"><h3><span class="icon">{icon("sparkles", 16)}</span> AI provider</h3>
 <span class="chip {'pill-suggest' if up else 'pill-auto'}">{'healthy' if up else 'offline'}</span></div>
 <p class="mono">{cfg.llm_provider} · {cfg.llm_base_url}</p>
 <p class="muted mono">gen {cfg.generation_model} · embed {cfg.embedding_model} · vision {'on' if cfg.vision else 'off'}</p>
-<div class="row"><button class="btn" onclick="location.reload()">Check again</button></div>
+<div class="row"><button class="btn" onclick="location.reload()"><span class="icon">{icon("undo", 16)}</span> Check again</button></div>
 <p class="muted">`charta doctor` prints the full report; the log is at <code>{applog.log_path(cfg)}</code>.</p>
 <p class="muted">Any OpenAI-compatible endpoint works: edit <code>[llm]</code> in <code>config.toml</code>.</p></div>
-<div class="card"><div class="card-head"><h3>Window</h3><span class="chip">{shell_kind}</span></div>
+<div class="card"><div class="card-head"><h3><span class="icon">{icon("info", 16)}</span> Window</h3><span class="chip">{shell_kind}</span></div>
 <p class="muted">Geometry is remembered in <code>{cfg.state_path()}</code>.</p>
 <p class="muted mono">debug: {'on — F5/Ctrl+R/F/P and DevTools work' if cfg.debug else 'off — browser keys are suppressed'}</p></div>
-<div class="card"><div class="card-head"><h3>Voice</h3></div>
+<div class="card"><div class="card-head"><h3><span class="icon">{icon("mic", 16)}</span> Voice</h3></div>
 <p class="muted">Local Whisper ({cfg.whisper_model}) by default.</p>
 <p>ElevenLabs <span class="badge-sensitive">cloud: audio leaves your device</span> — off by default.</p></div>
-<div class="card"><div class="card-head"><h3>Privacy</h3></div>
+<div class="card"><div class="card-head"><h3><span class="icon">{icon("shield", 16)}</span> Privacy</h3></div>
 <p>All processing is local. There is no delete button anywhere — Charta only moves or copies, and every move can be undone.</p>
 <p class="muted">Protected locations (system, Program Files, AppData, drive roots) are refused, never modified.</p></div></div>"""
     return shell("settings", folder, inner)

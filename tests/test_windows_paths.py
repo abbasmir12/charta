@@ -121,3 +121,52 @@ def test_doctor_verdict_fails_only_on_required_checks():
     assert verdict([Check("a", False, "bad")]) is False
     assert verdict([Check("opt", False, "missing", required=False)]) is True
     assert verdict([Check("opt", False, "missing", required=False), Check("req", False, "bad")]) is False
+
+
+def test_doctor_detects_a_generation_model_the_provider_does_not_offer(monkeypatch):
+    import charta.core.doctor as doctor
+
+    class Stub:
+        def __init__(self, _cfg):
+            pass
+
+        def ping(self, timeout=2.0):
+            return True
+
+        def models(self, timeout=2.0):
+            return ["gemma4:e4b", "nomic-embed-text:latest"]
+
+    monkeypatch.setattr(doctor, "LLMClient", Stub)
+    monkeypatch.setenv("CHARTA_MODEL", "gemma3:4b")
+    checks = doctor.run_checks(AppConfig.load())
+    model = next(c for c in checks if c.name == "model")
+    assert model.ok is False
+    assert "gemma4:e4b" in model.hint
+    assert doctor.verdict(checks) is False
+
+
+def test_doctor_accepts_the_configured_model(monkeypatch):
+    import charta.core.doctor as doctor
+
+    class Stub:
+        def __init__(self, _cfg):
+            pass
+
+        def ping(self, timeout=2.0):
+            return True
+
+        def models(self, timeout=2.0):
+            return ["gemma4:e4b"]
+
+    monkeypatch.setattr(doctor, "LLMClient", Stub)
+    monkeypatch.setenv("CHARTA_MODEL", "gemma4:e4b")
+    checks = doctor.run_checks(AppConfig.load())
+    assert next(c for c in checks if c.name == "model").ok is True
+
+
+def test_model_listed_allows_the_implicit_latest_tag():
+    from charta.core.doctor import _model_listed
+
+    assert _model_listed("llama3", ["llama3:latest"])
+    assert not _model_listed("llama3:8b", ["llama3:latest"])
+    assert _model_listed("gemma4:e4b", ["gemma4:e4b"])

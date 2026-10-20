@@ -57,6 +57,11 @@ def test_ping_ok_and_dead_port(fake_provider):
     assert llm_ping("http://127.0.0.1:9/v1") is False
 
 
+def test_models_lists_the_ids_or_returns_none(fake_provider):
+    assert LLMClient(_cfg(fake_provider)).models() == ["fake-model"]
+    assert LLMClient(_cfg(fake_provider, llm_base_url="http://127.0.0.1:9/v1")).models() is None
+
+
 def test_graceful_when_provider_down(fake_provider):
     fake_provider.fail_status = 500
     client = LLMClient(_cfg(fake_provider))

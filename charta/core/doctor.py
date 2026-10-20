@@ -75,6 +75,13 @@ def _windows_checks() -> list[Check]:
     return checks
 
 
+def _model_listed(wanted: str, models: list[str]) -> bool:
+    """Exact id, or the implicit ``:latest`` tag that Ollama omits."""
+    if wanted in models:
+        return True
+    return ":" not in wanted and f"{wanted}:latest" in models
+
+
 def run_checks(cfg: AppConfig | None = None, *, ping: bool = True) -> list[Check]:
     """Collect every check. Never raises; a failed check is a reported item."""
     cfg = cfg or AppConfig.load()
@@ -93,11 +100,28 @@ def run_checks(cfg: AppConfig | None = None, *, ping: bool = True) -> list[Check
         checks.append(Check("provider", False, "provider/base_url/model not set",
                             "fill in [llm] and [models] in config.toml"))
     elif ping:
-        reachable = LLMClient(cfg).ping(timeout=2.0)
+        client = LLMClient(cfg)
+        reachable = client.ping(timeout=2.0)
         checks.append(Check("provider", reachable,
                             f"{cfg.llm_provider} @ {cfg.llm_base_url} ({cfg.generation_model})",
                             "" if reachable else "start it (Ollama: `ollama serve`) or set "
                                                  "CHARTA_BASE_URL to a reachable endpoint"))
+        if reachable:
+            offered = client.models(timeout=2.5)
+            if offered is None:
+                checks.append(Check("model", True,
+                                    f"{cfg.generation_model} (provider cannot list models)",
+                                    required=False))
+            else:
+                listed = _model_listed(cfg.generation_model, offered)
+                shown = ", ".join(offered[:6])
+                checks.append(Check(
+                    "model", listed,
+                    f"{cfg.generation_model} available" if listed
+                    else f"{cfg.generation_model} is not offered by the provider",
+                    "" if listed else
+                    f"set [models] generation to one of: {shown} "
+                    f"(or run: ollama pull {cfg.generation_model})"))
     else:
         checks.append(Check("provider", True, f"{cfg.llm_provider} configured (not pinged)"))
 

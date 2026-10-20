@@ -99,6 +99,18 @@ class LLMClient:
         except Exception:  # noqa: BLE001
             return False
 
+    def models(self, timeout: float = 2.0) -> list[str] | None:
+        """Model ids the endpoint advertises, or None if it cannot list them."""
+        try:
+            req = urllib.request.Request(self.base_url + "/models", headers=self._headers())
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except Exception:  # noqa: BLE001
+            return None
+        items = data.get("data") if isinstance(data, dict) else None
+        ids = [str(i["id"]) for i in items or [] if isinstance(i, dict) and i.get("id")]
+        return ids or None
+
     # -- generation --------------------------------------------------------
     def generate(self, prompt: str, system: str = "", json_mode: bool = False,
                  images: Sequence[str | pathlib.Path] | None = None,
@@ -132,9 +144,14 @@ class LLMClient:
             if text:
                 return LLMResult(ok=True, text=text)
             last_err = "empty response"
+        hint = ""
+        if "HTTP 404" in last_err:
+            hint = (f" The model '{model or self.cfg.generation_model}' may not be "
+                    f"installed; see {self.base_url}/models.")
         return LLMResult(ok=False, error=(
-            f"{self.cfg.llm_provider} at {self.base_url} is not answering ({last_err}). "
+            f"{self.cfg.llm_provider} at {self.base_url} failed ({last_err}). "
             "Check [llm] in config.toml — for the local default run: ollama serve"
+            + hint
         ))
 
     def embed(self, text: str) -> list[float] | None:

@@ -41,6 +41,7 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-20: doctor now checks the configured generation model against the provider's `/models` list, so an installed `gemma4:e4b` with `gemma3:4b` configured is reported as a FAIL with the available ids instead of a healthy-looking ping. Generation 404s now name the missing model. Files: `charta/core/llm.py`, `charta/core/doctor.py`, `tests/test_openai_compat.py`, `tests/test_windows_paths.py`. Verified: `pytest -q` 156 passed.
 - 2026-10-20: make model usage visible — `Proposal.origin` records `llm` vs
   `heuristic`, and `charta demo --ai` now prints how many files the model
   actually classified (or warns that it fell back). The demo also de-duplicates

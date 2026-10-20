@@ -33,7 +33,6 @@ vision = true   # let a vision model read images/scanned PDFs
 
 [models]
 generation = "gemma3:4b"
-embedding = "nomic-embed-text"
 vision = ""     # blank = reuse the generation model
 timeout_seconds = 60
 retries = 1

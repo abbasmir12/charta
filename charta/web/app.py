@@ -556,7 +556,7 @@ def settings(folder: str = "", req: Request = None) -> str:  # type: ignore[assi
 <dt>Provider</dt><dd class="mono">{cfg.llm_provider}</dd>
 <dt>Endpoint</dt><dd class="mono">{cfg.llm_base_url}</dd>
 <dt>Generation</dt><dd class="mono">{cfg.generation_model}</dd>
-<dt>Embedding</dt><dd class="mono">{cfg.embedding_model}</dd>
+<dt>Retrieval</dt><dd>keyword + regex (no embeddings)</dd>
 <dt>Vision</dt><dd>{'on' if cfg.vision else 'off'}</dd>
 </dl>
 <div class="row" style="margin-top:var(--s4)"><button class="btn" onclick="location.reload()"><span class="icon">{icon("undo", 16)}</span> Check again</button>
@@ -757,7 +757,7 @@ async def api_ask(folder: str, req: Request) -> JSONResponse:
     body = await req.json()
     cfg = _cfg()
     client = LLMClient(cfg)
-    idx = build_index(folder, client, vision=_vision(cfg, client))
+    idx = build_index(folder, vision=_vision(cfg, client))
     ans = answer_query(str(body.get("q", "")), idx, client)
     return JSONResponse({"answer": ans.text,
                          "citations": [{"file": c.file, "page": c.page} for c in ans.citations]})

@@ -33,7 +33,6 @@ pip install pywebview        :: native window (optional; without it we use your 
 ```bat
 ollama serve
 ollama pull gemma3:4b
-ollama pull nomic-embed-text
 ```
 
 3b. Or any OpenAI-compatible endpoint — no code change:

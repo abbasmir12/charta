@@ -4,7 +4,6 @@ Environment overrides (handy for CI / CI secrets / one-off runs):
     CHARTA_BASE_URL    -> [llm] base_url
     CHARTA_API_KEY     -> [llm] api_key (fallback: OPENAI_API_KEY for cloud providers)
     CHARTA_MODEL       -> [models] generation
-    CHARTA_EMBED_MODEL -> [models] embedding
 """
 from __future__ import annotations
 
@@ -55,7 +54,6 @@ class AppConfig:
     llm_base_url: str = "http://localhost:11434/v1"
     llm_api_key: str = ""
     generation_model: str = "gemma3:4b"
-    embedding_model: str = "nomic-embed-text"
     vision_model: str = ""  # defaults to generation_model when blank
     vision: bool = True  # read images/scanned PDFs with a vision model
     llm_timeout: int = 60
@@ -110,8 +108,6 @@ class AppConfig:
             llm_api_key=api_key,
             generation_model=os.environ.get("CHARTA_MODEL")
             or str(models.get("generation", "gemma3:4b")),
-            embedding_model=os.environ.get("CHARTA_EMBED_MODEL")
-            or str(models.get("embedding", "nomic-embed-text")),
             vision_model=str(models.get("vision", "")),
             vision=bool(llm.get("vision", True)),
             llm_timeout=int(models.get("timeout_seconds", 60)),

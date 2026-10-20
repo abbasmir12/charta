@@ -1,9 +1,8 @@
 """Provider-agnostic LLM client speaking the *OpenAI-compatible* HTTP API.
 
-One client, any provider. Anything that exposes these three routes works:
+One client, any provider. Anything that exposes these routes works:
 
     POST {base_url}/chat/completions
-    POST {base_url}/embeddings
     GET  {base_url}/models
 
 That covers Ollama (``http://localhost:11434/v1``), LM Studio
@@ -50,7 +49,7 @@ def _guess_mime(path: str | pathlib.Path) -> str:
 
 
 class LLMClient:
-    """OpenAI-compatible chat + embeddings client (no third-party deps)."""
+    """OpenAI-compatible chat + vision client (no third-party deps)."""
 
     def __init__(self, cfg: AppConfig | None = None) -> None:
         self.cfg = cfg or AppConfig.load()
@@ -153,18 +152,6 @@ class LLMClient:
             "Check [llm] in config.toml — for the local default run: ollama serve"
             + hint
         ))
-
-    def embed(self, text: str) -> list[float] | None:
-        """Embedding vector, or None when the provider has no embedding model."""
-        try:
-            resp = self._request("POST", "/embeddings",
-                                 {"model": self.cfg.embedding_model, "input": text or ""})
-        except Exception:  # noqa: BLE001
-            return None
-        data = resp.get("data") or []
-        if data and isinstance(data[0], dict) and data[0].get("embedding"):
-            return [float(x) for x in data[0]["embedding"]]
-        return None
 
     # -- vision ------------------------------------------------------------
     def describe_image(self, data: bytes, mime: str = "image/png",

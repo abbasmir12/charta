@@ -69,9 +69,6 @@ def _make_handler(state: FakeProvider):
                     return
                 self._json(200, {"choices": [{"message": {"role": "assistant",
                                                           "content": state.reply(payload)}}]})
-            elif self.path.endswith("/embeddings"):
-                text = str(payload.get("input", ""))
-                self._json(200, {"data": [{"embedding": [float(len(text)), 1.0]}]})
             else:
                 self._json(404, {"error": "not found"})
 

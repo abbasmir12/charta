@@ -186,7 +186,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
     ch = load_charter(folder)
     client = _client()
     cfg = AppConfig.load()
-    idx = build_index(folder, client, vision=_vision(cfg, client))
+    idx = build_index(folder, vision=_vision(cfg, client))
     ans = answer_query(args.question, idx, client)
     print(ans.text)
     for c in ans.citations:

@@ -40,13 +40,14 @@ Headline features (priority order):
     second provider-specific HTTP path.
   - Generation: vision-capable model (4B-class preferred), configurable via
     `config.toml`, never hard-coded.
-  - Embeddings: configurable (e.g. `nomic-embed-text`).
+  - Retrieval: keyword/BM25 + regex (dates, amounts, document types) with
+    per-file descriptions; no embeddings and no vector database.
   - API keys come from env (`CHARTA_API_KEY` / `OPENAI_API_KEY`), not the repo.
 - File watching: `watchdog`.
 - PDF text: `PyMuPDF`. Scanned PDFs/screenshots: Gemma vision; fallback RapidOCR.
   Extractor behind one interface (`charta.core.extract`).
-- Storage: SQLite at `.charta/index.db` per folder; embeddings as blobs,
-  cosine similarity in numpy. No external vector DB.
+- Storage: human-readable files under `.charta/` (charter, proposals,
+  journal); the Ask index is built in memory per query. No vector DB.
 - Spreadsheets: `openpyxl`.
 - STT: `faster-whisper` locally (small by default) behind `charta.voice.stt`
   interface. ElevenLabs optional, opt-in, clearly labeled cloud.

@@ -55,7 +55,7 @@ def test_sensitive_detect_and_exclude(tmp_path):
     assert rep.sensitive and "password" in rep.kinds or "card" in rep.kinds
     from charta.core.ask import build_index
 
-    idx = build_index(tmp_path, None, exclude_sensitive=True)
+    idx = build_index(tmp_path, exclude_sensitive=True)
     assert all("secret" not in d["file"] for d in idx)
 
 

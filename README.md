@@ -54,7 +54,7 @@ generation_model = "gpt-4o-mini"     # [models] section
 
 Keys stay out of the repo — use env vars instead of the `api_key` field:
 `CHARTA_API_KEY` (also picks up `OPENAI_API_KEY` for cloud providers),
-`CHARTA_BASE_URL`, `CHARTA_MODEL`, `CHARTA_EMBED_MODEL`.
+`CHARTA_BASE_URL`, `CHARTA_MODEL`.
 
 If the endpoint is unreachable Charta never crashes: it falls back to
 heuristics and tells you which provider and URL failed.
@@ -66,7 +66,6 @@ pip install -r requirements.txt   # or pip install -e .
 # default local provider (required for AI; everything degrades gracefully without it)
 ollama serve
 ollama pull gemma3:4b
-ollama pull nomic-embed-text
 ```
 
 > Using OpenAI/OpenRouter/Groq instead? Set the env vars, skip Ollama:
@@ -187,7 +186,9 @@ for `/api/health`, and everything else goes through the same guarded core.
 Your files never leave the device; the AI's memory is a Markdown file you own,
 copy, and edit. Trade-offs, honestly: a 4B local model is slower and dumber than
 cloud giants (heuristic fallback covers offline), vision/OCR is the bottleneck
-(~seconds/page on iGPU), and embeddings in SQLite won't scale past ~10k files.
+(~seconds/page on iGPU). Ask uses keyword/BM25 ranking plus regex signals
+(dates, months, amounts, document types) instead of embeddings, so there is no
+second model to download and nothing to index ahead of time.
 For a personal folder, that's the right trade.
 
 ## Performance (this machine, 2026-10-14)

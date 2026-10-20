@@ -7,7 +7,7 @@ from charta.core.llm import LLMClient, llm_ping
 
 def _cfg(fake, **overrides) -> AppConfig:
     values = dict(llm_provider="custom", llm_base_url=fake.base_url, llm_api_key="test-key",
-                  generation_model="fake-model", embedding_model="fake-embed",
+                  generation_model="fake-model",
                   llm_timeout=5, llm_retries=1)
     values.update(overrides)
     return AppConfig(**values)
@@ -43,13 +43,6 @@ def test_json_mode_retries_without_response_format_when_rejected(fake_provider):
     assert "response_format" not in fake_provider.posts[1]
 
 
-def test_embed_reads_data_array(fake_provider):
-    vec = LLMClient(_cfg(fake_provider)).embed("abcd")
-    assert vec == [4.0, 1.0]
-    assert fake_provider.paths == ["/v1/embeddings"]
-    assert fake_provider.posts[0]["input"] == "abcd"
-
-
 def test_ping_ok_and_dead_port(fake_provider):
     client = LLMClient(_cfg(fake_provider))
     assert client.ping() is True
@@ -68,7 +61,6 @@ def test_graceful_when_provider_down(fake_provider):
     res = client.generate("hi", json_mode=True)
     assert res.ok is False
     assert "custom" in res.error and "config.toml" in res.error
-    assert client.embed("x") is None
     assert client.ping() is False
 
 

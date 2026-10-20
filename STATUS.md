@@ -24,7 +24,7 @@ pass and a recorded before/after demo.
 - [x] Purpose outputs: receipts spreadsheet (xlsx + csv), study notes +
       flashcards, and a data-entry table.
 - [x] Gap detection (expected vs found) and "ask the folder" with file/page
-      citations (embeddings when available, keyword fallback otherwise).
+      citations (keyword/BM25 + regex retrieval, no embeddings).
 - [x] Real watching: a per-user watched-folders registry plus a background
       watcher hosted by the local backend; survives closing the window to the
       tray. Overview shows lane status, Scan now, and Stop watching.
@@ -41,6 +41,18 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-20: remove embeddings completely; Ask is now lexical. `charta/core/ask.py`
+  ranks chunks with BM25 keywords plus explainable signals: a per-file description
+  (doc type, vendor, date, amount), filename matches, phrase/bigram matches,
+  month/year/number/amount boosts, document-type intent, and a small domain
+  synonym table; regexes extract dates, months and amounts. No `/embeddings`
+  call, no embedding model, no numpy — the model is used only to write the final
+  answer. Removed `embedding_model`, `CHARTA_EMBED_MODEL`, `[models] embedding`
+  and the Settings row. Files: `charta/core/ask.py`, `charta/core/llm.py`,
+  `charta/core/config.py`, `charta/web/app.py`, `config.toml`, `README.md`,
+  `docs/WINDOWS.md`, `AGENTS.md`, `requirements.txt`, `pyproject.toml`, tests.
+  Verified: `pytest -q` 157 passed; the demo folder answers "what did EDF charge
+  in March?" with the EDF receipt and €87.40.
 - 2026-10-20: doctor now checks the configured generation model against the provider's `/models` list, so an installed `gemma4:e4b` with `gemma3:4b` configured is reported as a FAIL with the available ids instead of a healthy-looking ping. Generation 404s now name the missing model. Files: `charta/core/llm.py`, `charta/core/doctor.py`, `tests/test_openai_compat.py`, `tests/test_windows_paths.py`. Verified: `pytest -q` 156 passed.
 - 2026-10-20: make model usage visible — `Proposal.origin` records `llm` vs
   `heuristic`, and `charta demo --ai` now prints how many files the model
@@ -81,6 +93,11 @@ pass and a recorded before/after demo.
 
 ## Decisions
 
+- 2026-10-20: Retrieval is keyword/BM25 + regex, not embeddings. Why: it removes a
+  second model and a vector store, works with every provider (including ones with
+  no `/embeddings` route, e.g. OpenRouter chat-only), is deterministic and
+  explainable, and for a personal folder the signals that matter — dates, months,
+  amounts, document type, vendor, filename — can be extracted exactly with regex.
 - One OpenAI-compatible client for every provider. "Bring your own model" must
   not mean editing client code; all supported services speak the same routes.
 - Suggest mode is the default and the core never deletes. Every move goes
@@ -142,7 +159,7 @@ python3 -m charta.cli doctor               # read-only readiness report
 python3 -m charta.cli logs                 # log tail + running session
 
 # default local provider
-ollama serve && ollama pull gemma3:4b && ollama pull nomic-embed-text
+ollama serve && ollama pull gemma3:4b
 
 # or any OpenAI-compatible endpoint (env wins over config.toml)
 export CHARTA_BASE_URL=https://api.openai.com/v1 CHARTA_API_KEY=sk-... CHARTA_MODEL=gpt-4o-mini

@@ -41,6 +41,12 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-20: default generation model is now `gemma4:e4b` (what Ollama actually
+  ships on this machine); config default, `config.toml` and the pull commands in
+  README/WINDOWS/STATUS all updated. Files: `charta/core/config.py`,
+  `config.toml`, `README.md`, `docs/WINDOWS.md`, `STATUS.md`. Verified: `pytest
+  -q` 162 passed.
+
 - 2026-10-20: add `charta testmodel` — a one-word end-to-end model check. It pings
   the provider, verifies the configured model is actually offered, sends `hello`
   through `/chat/completions`, and prints the reply plus a PASS/FAIL status
@@ -63,7 +69,7 @@ pass and a recorded before/after demo.
   `docs/WINDOWS.md`, `AGENTS.md`, `requirements.txt`, `pyproject.toml`, tests.
   Verified: `pytest -q` 157 passed; the demo folder answers "what did EDF charge
   in March?" with the EDF receipt and €87.40.
-- 2026-10-20: doctor now checks the configured generation model against the provider's `/models` list, so an installed `gemma4:e4b` with `gemma3:4b` configured is reported as a FAIL with the available ids instead of a healthy-looking ping. Generation 404s now name the missing model. Files: `charta/core/llm.py`, `charta/core/doctor.py`, `tests/test_openai_compat.py`, `tests/test_windows_paths.py`. Verified: `pytest -q` 156 passed.
+- 2026-10-20: doctor now checks the configured generation model against the provider's `/models` list, so an installed `gemma4:e4b` with `gemma4:e4b` configured is reported as a FAIL with the available ids instead of a healthy-looking ping. Generation 404s now name the missing model. Files: `charta/core/llm.py`, `charta/core/doctor.py`, `tests/test_openai_compat.py`, `tests/test_windows_paths.py`. Verified: `pytest -q` 156 passed.
 - 2026-10-20: make model usage visible — `Proposal.origin` records `llm` vs
   `heuristic`, and `charta demo --ai` now prints how many files the model
   actually classified (or warns that it fell back). The demo also de-duplicates
@@ -170,7 +176,7 @@ python3 -m charta.cli testmodel            # send 'hello' to the model, show rep
 python3 -m charta.cli logs                 # log tail + running session
 
 # default local provider
-ollama serve && ollama pull gemma3:4b
+ollama serve && ollama pull gemma4:e4b
 
 # or any OpenAI-compatible endpoint (env wins over config.toml)
 export CHARTA_BASE_URL=https://api.openai.com/v1 CHARTA_API_KEY=sk-... CHARTA_MODEL=gpt-4o-mini

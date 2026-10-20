@@ -53,7 +53,7 @@ class AppConfig:
     llm_provider: str = "ollama"
     llm_base_url: str = "http://localhost:11434/v1"
     llm_api_key: str = ""
-    generation_model: str = "gemma3:4b"
+    generation_model: str = "gemma4:e4b"
     vision_model: str = ""  # defaults to generation_model when blank
     vision: bool = True  # read images/scanned PDFs with a vision model
     llm_timeout: int = 60
@@ -107,7 +107,7 @@ class AppConfig:
             llm_base_url=base_url,
             llm_api_key=api_key,
             generation_model=os.environ.get("CHARTA_MODEL")
-            or str(models.get("generation", "gemma3:4b")),
+            or str(models.get("generation", "gemma4:e4b")),
             vision_model=str(models.get("vision", "")),
             vision=bool(llm.get("vision", True)),
             llm_timeout=int(models.get("timeout_seconds", 60)),

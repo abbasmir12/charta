@@ -32,7 +32,7 @@ api_key = ""
 vision = true   # let a vision model read images/scanned PDFs
 
 [models]
-generation = "gemma3:4b"
+generation = "gemma4:e4b"
 vision = ""     # blank = reuse the generation model
 timeout_seconds = 60
 retries = 1

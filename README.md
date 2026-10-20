@@ -65,7 +65,7 @@ heuristics and tells you which provider and URL failed.
 pip install -r requirements.txt   # or pip install -e .
 # default local provider (required for AI; everything degrades gracefully without it)
 ollama serve
-ollama pull gemma3:4b
+ollama pull gemma4:e4b
 ```
 
 > Using OpenAI/OpenRouter/Groq instead? Set the env vars, skip Ollama:

@@ -66,7 +66,8 @@ def test_command_is_none_when_electron_binary_is_missing(app_dir):
     """A present shell folder without Electron means fall back, never npx-hang."""
     (app_dir / "Charta.exe").unlink()
     assert electron.command(port=9, app=app_dir) is None
-    assert "npm install" in electron.install_hint()
+    hint = electron.install_hint(app_dir)
+    assert "npm install" in hint and "node_modules" in hint
 
 
 def test_run_opens_electron_without_starting_a_second_backend(monkeypatch, tmp_path, capsys):

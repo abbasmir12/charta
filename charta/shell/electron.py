@@ -71,9 +71,16 @@ def is_packaged(app: pathlib.Path, binary: str) -> bool:
     return pathlib.Path(binary).parent == app
 
 
-def install_hint() -> str:
-    """One-line fix shown when the shell folder exists but Electron is not installed."""
-    return "run: cd desktop && npm install     (Electron's binary downloads on install)"
+def expected_binary(app: pathlib.Path) -> pathlib.Path:
+    """Where Electron's real binary lives after `npm install` on this platform."""
+    rel = _LOCAL_BINARIES[0] if sys.platform == "win32" else _LOCAL_BINARIES[1]
+    return app / rel
+
+
+def install_hint(app: pathlib.Path | None = None) -> str:
+    """One-line fix when the shell folder exists but Electron is not installed."""
+    where = expected_binary(app) if app else "desktop/node_modules/electron/dist/electron.exe"
+    return f"expected {where} — fix: cd desktop && npm install"
 
 
 def command(port: int, folder: str = "", debug: bool = False,
@@ -165,4 +172,4 @@ def _spawn(argv: list[str], kwargs: dict) -> subprocess.Popen:
 
 
 __all__ = ["REPO_DESKTOP", "available", "command", "desktop_dir", "electron_bin",
-           "is_packaged", "install_hint", "launch"]
+           "is_packaged", "install_hint", "expected_binary", "launch"]

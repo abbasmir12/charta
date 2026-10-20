@@ -212,8 +212,8 @@ def run(cfg: AppConfig, folder: str = "", *, debug: bool | None = None,
                                             app=electron_app)
                      if electron_app else None)
     if electron_app and electron_argv is None:
-        print(f"charta: the desktop shell is present but Electron is not installed — "
-              f"{electron_shell.install_hint()}")
+        print("charta: the desktop shell is present but Electron is not installed — "
+              f"{electron_shell.install_hint(electron_app)}")
     view = "electron" if electron_argv else ("browser" if browser_only else _view_kind())
     applog.write_session(cfg, pid=os.getpid(), port=chosen, url=url, view=view, debug=debug)
     if view == "electron":

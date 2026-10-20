@@ -1,0 +1,51 @@
+[app]
+port = 8123
+host = "127.0.0.1"
+# Per-user state (window geometry). Blank = %APPDATA%/Charta on Windows,
+# ~/.config/charta elsewhere. Never written inside a watched folder.
+state_dir = ""
+debug = false   # true (or `charta serve --debug`) keeps F5/Ctrl+R/F/P + DevTools
+mica = true     # Windows 11 Mica backdrop; falls back to a solid title bar
+
+# ---- AI provider (OpenAI-compatible API) --------------------------------
+# One code path for Ollama, LM Studio, OpenAI, OpenRouter, Groq, Together…
+# `provider` picks a default base_url; set base_url yourself for anything else.
+#   ollama     http://localhost:11434/v1     (local, default — no key needed)
+#   lmstudio   http://localhost:1234/v1
+#   llamacpp   http://localhost:8080/v1
+#   vllm       http://localhost:8000/v1
+#   openai     https://api.openai.com/v1
+#   openrouter https://openrouter.ai/api/v1
+#   groq       https://api.groq.com/openai/v1
+#   together   https://api.together.xyz/v1
+#   deepseek   https://api.deepseek.com/v1
+#   custom     set base_url explicitly
+# API keys are secrets: prefer the CHARTA_API_KEY env var over pasting one here.
+[llm]
+provider = "ollama"
+# base_url is optional: leave it blank and `provider` picks the default endpoint
+# above. Set it only for a custom/self-hosted server (it then overrides the
+# provider default). A URL left over from another provider is ignored, so simply
+# flipping `provider` to e.g. "openrouter" is enough — no base_url edit needed.
+base_url = ""
+api_key = ""
+vision = true   # let a vision model read images/scanned PDFs
+
+[models]
+generation = "gemma3:4b"
+embedding = "nomic-embed-text"
+vision = ""     # blank = reuse the generation model
+timeout_seconds = 60
+retries = 1
+
+[watcher]
+stable_seconds = 2
+poll_interval = 0.5
+
+[safety]
+mode = "suggest"
+exclude_sensitive_from_index = true
+
+[voice]
+provider = "local"
+whisper_model = "small"

@@ -1,0 +1,135 @@
+# STATUS.md — Charta
+
+> Public snapshot of the project state. How to run and test is at the bottom.
+
+## Current Focus
+
+Ship a demo that a stranger can reproduce in one command: `charta demo` builds
+a messy folder, charters it, proposes and approves placements, and writes the
+purpose output — offline, with no model or key required. The desktop app and
+the watched-folder pipeline are built; the remaining work is the Windows visual
+pass and a recorded before/after demo.
+
+## What works
+
+- [x] Folder Charter: create from text (or voice in the UI), edit, and three
+      presets (student, freelancer, data entry). Stored as human-readable
+      `.charta/charter.md` (Markdown + YAML front-matter).
+- [x] Any OpenAI-compatible provider through one `LLMClient`: Ollama (default,
+      local), LM Studio, llama.cpp, vLLM, OpenAI, OpenRouter, Groq, Together,
+      DeepSeek, or a custom `base_url`. Keys come from env, never the repo.
+- [x] Safe proposals: suggest mode by default, dry-run on every mutating
+      command, protected-path refusal, collision suffixes, sensitive-content
+      guard, and a journal so every move is undoable.
+- [x] Purpose outputs: receipts spreadsheet (xlsx + csv), study notes +
+      flashcards, and a data-entry table.
+- [x] Gap detection (expected vs found) and "ask the folder" with file/page
+      citations (embeddings when available, keyword fallback otherwise).
+- [x] Real watching: a per-user watched-folders registry plus a background
+      watcher hosted by the local backend; survives closing the window to the
+      tray. Overview shows lane status, Scan now, and Stop watching.
+- [x] Shell integration: right-click "Watch with Charta" in Explorer, a live
+      tray menu, and per-folder "Being watched with Charta" verbs.
+- [x] Local web UI (FastAPI + plain HTML/CSS/JS, no bundler, no CDN) and an
+      Electron desktop shell with custom chrome, tray, and hardened defaults.
+- [x] Voice input interface (`faster-whisper` locally) and vision for scanned
+      PDFs/images through the same model client.
+- [x] `charta demo`: deterministic messy folder + preset charter + propose +
+      approve + purpose output in one command; offline by default, `--ai` to
+      use the configured model, `--dry-run`, `--reset`, `--watch`.
+- [x] 149 pytest tests, Electron unit tests, 27 measured UI screens.
+
+## Done Log
+
+- 2026-10-20: initial public snapshot — folder charter, safe proposals and undo,
+  purpose outputs, gaps, cited Q&A, real watching, tray/Explorer integration,
+  Electron shell, and the one-command demo. Verified with `pytest -q`
+  (149 passed), the UI measurement script (27 screens), and a headless Electron
+  smoke run. Earlier development history is kept in a local archive branch.
+
+## Next Up
+
+1. Windows visual pass: Explorer menu, tray, Mica/title bar, close-to-tray.
+2. Record a 60–90s before/after demo (`charta demo` → sorted folder + output).
+3. Live-model pass on Gemma via Ollama for classification quality and vision.
+
+## Blockers & Open Questions
+
+- The Windows-only visuals (Explorer verb rendering, Mica, tray icon,
+  close-to-tray) are written and unit-tested as guarded no-ops but have not
+  been seen on a real Windows display yet.
+- No live model on the Linux dev box: the provider path is verified against a
+  local fake OpenAI-compatible server; real-model latency and vision quality
+  are still to be measured.
+- Fonts are not bundled; the UI uses the native system stack (no CDN).
+- Open question: bundle pywebview by default, or keep it optional so the web UI
+  works with zero extra installs?
+
+## Decisions
+
+- One OpenAI-compatible client for every provider. "Bring your own model" must
+  not mean editing client code; all supported services speak the same routes.
+- Suggest mode is the default and the core never deletes. Every move goes
+  through one pipeline (propose → approve → journal) so auto mode cannot be a
+  second, laxer path.
+- The watcher runs inside the local backend, not as a detached process: the
+  Electron shell stays in the tray, so watching survives the window closing
+  without PID files or a service.
+- A per-user watched-folders registry, not the presence of `.charta`, is the
+  source of truth; the tray, CLI, and UI must agree.
+- A config-file `base_url` equal to a different provider's stock default is
+  ignored, so `provider` alone selects the endpoint and a stale template value
+  cannot silently call localhost.
+- `charta demo --reset` only removes a folder carrying the demo marker; any
+  other non-empty folder is refused, so the demo can never wipe real files.
+- Explorer per-folder markers use the documented `AppliesTo` (AQS) verb instead
+  of a native COM extension: reversible, HKCU-only, and testable without a
+  Windows build; its rendering remains unverified.
+- Structure before surface in the UI: hierarchy in grayscale first, one
+  restrained accent for selection only, true-ink primary actions, and no
+  card/pill soup. Design details live in `DESIGN.md`.
+
+## Failures & Lessons
+
+- A compound report ("terminal flashes, then 0 files tracked") had two causes:
+  a console-script launcher and a UI that never actually watched. Split compound
+  reports and verify each symptom.
+- The headline feature was half-wired: a charter could be created, but nothing
+  ever watched until the CLI was run. Trace the user's click all the way to the
+  code that does the work.
+- A pre-filled `base_url` in the shipped config outranked `provider`, so
+  switching to OpenRouter still called localhost. Optional fields should ship
+  blank; the selector should be the source of truth.
+- Windows-specific branches pass on Linux only as guarded no-ops. Read the
+  platform branch as if it were the only branch; do not confuse "the guard
+  works" with "the feature works".
+- A green UI check is necessary but not sufficient: reviewing rendered
+  screenshots caught duplicated controls, cramped rows, and undersized hit
+  targets that the assertions missed.
+
+## How to Run & Test
+
+```bash
+git clone git@github.com:abbasmir12/charta.git
+cd charta
+pip install -r requirements.txt
+
+python3 -m charta.cli demo                 # messy folder → sorted + receipts.csv (offline)
+python3 -m charta.cli demo --preset student --reset
+python3 -m charta.cli demo --ai            # use the configured model instead
+python3 -m charta.cli open --folder ./charta-demo   # the desktop/browser UI
+
+python3 -m pytest -q                       # 149 passed
+python3 tools/ui_check.py                  # measured screens + docs/screenshots/
+cd desktop && npm test && npm run smoke    # unit tests + 9 headless routes
+cd desktop && npm start                    # Electron desktop app
+
+python3 -m charta.cli doctor               # read-only readiness report
+python3 -m charta.cli logs                 # log tail + running session
+
+# default local provider
+ollama serve && ollama pull gemma3:4b && ollama pull nomic-embed-text
+
+# or any OpenAI-compatible endpoint (env wins over config.toml)
+export CHARTA_BASE_URL=https://api.openai.com/v1 CHARTA_API_KEY=sk-... CHARTA_MODEL=gpt-4o-mini
+```

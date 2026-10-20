@@ -1,0 +1,10 @@
+fastapi>=0.110
+uvicorn>=0.29
+watchdog>=4.0
+numpy>=1.26
+openpyxl>=3.1
+pydantic>=2.0
+pytest>=8.0
+# optional (graceful fallback if missing):
+# PyMuPDF, python-docx, faster-whisper
+# pywebview  (native window for `charta open`; without it we open your browser)

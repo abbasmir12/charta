@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=61"]
 [project]
 name = "charta"
 version = "0.1.0"
@@ -11,5 +11,11 @@ dependencies = ["fastapi", "uvicorn", "watchdog", "openpyxl", "pydantic"]
 native = ["pywebview>=4.0"]
 [project.scripts]
 charta = "charta.cli:main"
+[tool.setuptools.packages.find]
+# Only the `charta` package: a flat layout would otherwise sweep in desktop/,
+# samples/, eval/ and tools/ and refuse to build.
+include = ["charta*"]
+[tool.setuptools.package-data]
+charta = ["assets/*", "web/static/*", "web/static/**/*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]

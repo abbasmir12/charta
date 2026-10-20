@@ -15,6 +15,22 @@ def client(monkeypatch):
     return TestClient(app)
 
 
+def test_health_never_waits_on_the_provider(client, monkeypatch):
+    """The launcher probes /api/health with a 1.5s timeout; a model ping there
+    used to make a healthy server look dead."""
+    from charta.core.llm import LLMClient
+
+    def boom(*_a, **_k):
+        raise AssertionError("/api/health must not call the model")
+
+    monkeypatch.setattr(LLMClient, "ping", boom)
+    res = client.get("/api/health")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["provider"] and "llm" not in body
+
+
 def test_debug_flag_defaults_off_and_follows_env(client, monkeypatch):
     monkeypatch.delenv("CHARTA_DEBUG", raising=False)
     assert "window.__CHARTA_DEBUG__=false" in client.get("/").text

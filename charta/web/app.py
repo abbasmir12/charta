@@ -765,9 +765,17 @@ async def api_ask(folder: str, req: Request) -> JSONResponse:
 
 @app.get("/api/health")
 def health() -> JSONResponse:
+    """Liveness only — must answer instantly so launchers never time out.
+
+    Provider reachability is deliberately not checked here: a remote or
+    slow model ping can take seconds, which made Electron report "no
+    response from /api/health" while the server was starting perfectly.
+    The Overview banner uses `_provider_up()` for that question instead.
+    """
     cfg = _cfg()
-    return JSONResponse({"provider": cfg.llm_provider, "base_url": cfg.llm_base_url,
-                         "llm": LLMClient(cfg).ping(), "models": [cfg.generation_model]})
+    return JSONResponse({"ok": True, "provider": cfg.llm_provider,
+                         "base_url": cfg.llm_base_url,
+                         "models": [cfg.generation_model]})
 
 
 @app.get("/api/events")

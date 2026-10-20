@@ -41,6 +41,12 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-20: fix the launcher health check — `/api/health` is now liveness-only
+  (about 40 ms) and never pings the model. Electron probes it with a 1.5 s
+  timeout, so the old 2 s ping made a healthy server report "no response from
+  /api/health" while it was starting fine. Files: `charta/web/app.py`,
+  `tests/test_web_ui.py`. Verified: `pytest -q` 150 passed; health returns 200
+  in ~40 ms with the provider unreachable.
 - 2026-10-20: initial public snapshot — folder charter, safe proposals and undo,
   purpose outputs, gaps, cited Q&A, real watching, tray/Explorer integration,
   Electron shell, and the one-command demo. Verified with `pytest -q`

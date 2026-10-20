@@ -41,6 +41,13 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-20: make model usage visible — `Proposal.origin` records `llm` vs
+  `heuristic`, and `charta demo --ai` now prints how many files the model
+  actually classified (or warns that it fell back). The demo also de-duplicates
+  output paths and explains a missing `receipts.xlsx` when `openpyxl` is absent.
+  Files: `charta/core/classify.py`, `charta/core/demo.py`, `charta/cli.py`,
+  `tests/test_pipeline.py`, `tests/test_demo.py`. Verified: `pytest -q`
+  152 passed; `--ai` against an unreachable provider prints the fallback warning.
 - 2026-10-20: fix the launcher health check — `/api/health` is now liveness-only
   (about 40 ms) and never pings the model. Electron probes it with a 1.5 s
   timeout, so the old 2 s ping made a healthy server report "no response from

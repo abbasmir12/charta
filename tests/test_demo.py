@@ -73,3 +73,21 @@ def test_demo_cli_prints_payoff(tmp_path, capsys):
     assert "offline heuristic" in out
     assert "Output you did not have to make by hand" in out
     assert "Nothing was deleted" in out
+
+
+class _DemoReply:
+    ok = True
+    text = ('{"dest_dir":"ModelDir","new_name":"x.txt",'
+            '"reason":"model reason","confidence":0.9}')
+
+
+class _DemoClient:
+    def generate(self, *_a, **_k):
+        return _DemoReply()
+
+
+def test_demo_says_whether_the_model_answered(tmp_path):
+    res = run(tmp_path / "demo", "freelancer", use_llm=True, client=_DemoClient())
+    assert res.used_llm
+    assert res.llm_files == len(res.before)
+    assert all(p.origin == "llm" for p in res.proposals)

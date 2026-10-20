@@ -53,3 +53,31 @@ def test_pipeline_uses_vision_hook(tmp_path):
     res = process_new_file(tmp_path, img, preset_charter("freelancer"), vision=vision)
     assert seen["mime"] == "image/png"
     assert res.proposal.dest_dir
+
+
+class _Reply:
+    def __init__(self, ok: bool, text: str = ""):
+        self.ok = ok
+        self.text = text
+
+
+class _StubClient:
+    def __init__(self, ok: bool = True):
+        self.ok = ok
+
+    def generate(self, *_a, **_k) -> _Reply:
+        if not self.ok:
+            return _Reply(False, "down")
+        return _Reply(True, '{"dest_dir":"ModelDir","new_name":"x.txt",'
+                            '"reason":"model reason","confidence":0.91}')
+
+
+def test_proposal_records_whether_the_model_answered(tmp_path):
+    from charta.core.classify import propose_for_file
+
+    ch = preset_charter("student")
+    good = propose_for_file("x.txt", "text", ch, _StubClient(True))
+    assert good.dest_dir == "ModelDir" and good.origin == "llm"
+
+    down = propose_for_file("x.txt", "text", ch, _StubClient(False))
+    assert down.origin == "heuristic" and down.reason

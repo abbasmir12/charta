@@ -65,6 +65,7 @@ class DemoResult:
     outputs: dict = field(default_factory=dict)
     applied: bool = False
     used_llm: bool = False
+    llm_files: int = 0
     purpose: str = ""
 
 
@@ -145,6 +146,8 @@ def run(folder: str | pathlib.Path, preset: str = "freelancer", *,
         else:
             outputs = build_data_entry(root, ch.fields)
 
+    llm_files = sum(1 for p in proposals if p.origin == "llm")
     return DemoResult(folder=str(root), preset=preset, before=before,
                       proposals=proposals, after=tree(root), outputs=outputs,
-                      applied=apply, used_llm=use_llm, purpose=ch.purpose)
+                      applied=apply, used_llm=llm_files > 0, llm_files=llm_files,
+                      purpose=ch.purpose)

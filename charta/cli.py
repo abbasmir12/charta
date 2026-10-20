@@ -221,7 +221,12 @@ def cmd_demo(args: argparse.Namespace) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"Cannot set up demo: {e}")
         return 2
-    mode = "configured model" if res.used_llm else "offline heuristic (no model needed)"
+    if res.used_llm:
+        mode = f"configured model ({res.llm_files}/{len(res.proposals)} files)"
+    elif args.ai:
+        mode = "offline heuristic — the configured model did not answer (run: charta doctor)"
+    else:
+        mode = "offline heuristic (no model needed)"
     print(f"Charta demo — {res.preset} — {mode}\n")
     print(f"Folder: {res.folder}")
     print(f"Before: {len(res.before)} files, flat")
@@ -239,13 +244,17 @@ def cmd_demo(args: argparse.Namespace) -> int:
     _print_paths(res.after)
     if res.outputs:
         print("\nOutput you did not have to make by hand:")
+        seen: set[str] = set()
         for k, v in res.outputs.items():
-            if not isinstance(v, str):
+            if not isinstance(v, str) or v in seen:
                 continue
+            seen.add(v)
             rel = pathlib.Path(v).relative_to(folder) if pathlib.Path(v).is_relative_to(folder) else v
             print(f"  {rel}")
         if "rows" in res.outputs:
             print(f"  ({res.outputs['rows']} rows)")
+        if res.outputs.get("xlsx") == res.outputs.get("csv"):
+            print("  (Excel copy skipped — install openpyxl to also get receipts.xlsx)")
     print("\nNothing was deleted. Every move is journaled.")
     print(f"Undo one step:  charta undo --folder \"{res.folder}\"")
     print(f"See it in the UI: charta open --folder \"{res.folder}\"")

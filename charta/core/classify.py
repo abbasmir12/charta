@@ -19,6 +19,7 @@ class Proposal:
     confidence: float = 0.7
     sensitive: bool = False
     status: str = "pending"
+    origin: str = "heuristic"  # "llm" when the configured model actually answered
 
 
 def _heuristic(text: str, filename: str, charter: Charter) -> Proposal:
@@ -78,7 +79,8 @@ def propose_for_file(filename: str, text: str, charter: Charter,
                 return Proposal(filename, str(d.get("dest_dir", "Inbox")),
                                 str(d.get("new_name", filename)),
                                 str(d.get("reason", "suggested by local model")),
-                                float(d.get("confidence", 0.7)), sensitive)
+                                float(d.get("confidence", 0.7)), sensitive,
+                                origin="llm")
             except Exception:
                 pass
     # retry once inside client already; fallback:

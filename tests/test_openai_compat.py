@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from charta.core.config import AppConfig
+from charta.core.doctor import test_model
 from charta.core.llm import LLMClient, llm_ping
 
 
@@ -100,3 +101,19 @@ def test_generate_without_images_keeps_plain_string(fake_provider):
     fake_provider.reply = lambda payload: "ok"
     assert LLMClient(_cfg(fake_provider)).generate("plain").ok
     assert isinstance(fake_provider.posts[0]["messages"][-1]["content"], str)
+
+
+def test_testmodel_reports_the_reply_and_metadata(fake_provider):
+    fake_provider.reply = lambda payload: "Hi! I am a local model."
+    rep = test_model(_cfg(fake_provider))
+    assert rep.ok and rep.reachable and rep.model_listed is True
+    assert rep.reply == "Hi! I am a local model." and rep.error == ""
+    assert rep.prompt == "hello" and rep.seconds >= 0
+    assert "/v1/chat/completions" in fake_provider.paths
+
+
+def test_testmodel_reports_failure_when_provider_is_down(fake_provider):
+    fake_provider.fail_status = 500
+    rep = test_model(_cfg(fake_provider))
+    assert not rep.ok and rep.reply == "" and rep.error
+    assert not rep.reachable

@@ -14,6 +14,7 @@ import json
 import pathlib
 import struct
 import sys
+import time
 from dataclasses import dataclass
 
 from . import config as config_mod
@@ -178,3 +179,52 @@ def report_json(checks: list[Check]) -> str:
                        "checks": [{"name": c.name, "ok": c.ok, "detail": c.detail,
                                    "hint": c.hint, "required": c.required} for c in checks]},
                       indent=2)
+
+
+@dataclass
+class ModelTest:
+    """Outcome of a live round-trip to the configured model."""
+
+    provider: str = ""
+    base_url: str = ""
+    model: str = ""
+    prompt: str = "hello"
+    reachable: bool = False
+    model_listed: bool | None = None
+    reply: str = ""
+    error: str = ""
+    seconds: float = 0.0
+
+    @property
+    def ok(self) -> bool:
+        return bool(self.reply) and not self.error
+
+
+def test_model(cfg: AppConfig | None = None, prompt: str = "hello",
+               timeout: float | None = None) -> ModelTest:
+    """Send a short prompt to the configured model and report what came back.
+
+    Needs a reachable endpoint *and* a working `/chat/completions` answer, so it
+    catches problems a plain ping cannot (missing model, wrong key, chat route
+    disabled). Never raises.
+    """
+    cfg = cfg or AppConfig.load()
+    out = ModelTest(provider=cfg.llm_provider, base_url=cfg.llm_base_url,
+                    model=cfg.generation_model, prompt=prompt)
+    try:
+        client = LLMClient(cfg)
+        out.reachable = client.ping(timeout=2.0)
+        if out.reachable:
+            offered = client.models(timeout=2.5)
+            if offered is not None:
+                out.model_listed = _model_listed(cfg.generation_model, offered)
+        started = time.perf_counter()
+        result = client.generate(prompt, timeout=timeout)
+        out.seconds = time.perf_counter() - started
+        if result.ok:
+            out.reply = result.text.strip()
+        else:
+            out.error = result.error
+    except Exception as e:  # noqa: BLE001 — a diagnostic must never crash
+        out.error = str(e)
+    return out

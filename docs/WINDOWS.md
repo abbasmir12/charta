@@ -55,6 +55,18 @@ host line warns, `charta open` still works — it opens your browser instead.
 
 Paste the report back (`--json` for machine-readable) if something is off.
 
+Then prove the model answers, not just that the port is open:
+
+```bat
+python -m charta.cli testmodel
+```
+
+It sends `hello` to the configured model and prints the reply with a PASS/FAIL
+status (`[OK] reachable`, `[OK] model`, `[OK] answer "..."`). A `[FAIL] model`
+line names the ids the provider actually offers — set `[models] generation` to
+one of them, or `ollama pull` it. Use `--prompt`/`--timeout` for a slower model
+and `--json` when pasting the result back.
+
 ## 4b. Desktop app (Electron) — recommended
 
 ```bat

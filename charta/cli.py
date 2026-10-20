@@ -302,6 +302,59 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0 if verdict(checks) else 1
 
 
+def cmd_testmodel(args: argparse.Namespace) -> int:
+    """Send a short prompt to the configured model and show the reply + status."""
+    import json
+
+    from .core.doctor import test_model
+
+    cfg = AppConfig.load()
+    report = test_model(cfg, prompt=args.prompt, timeout=args.timeout)
+
+    if args.json:
+        print(json.dumps({"ok": report.ok, "provider": report.provider,
+                          "base_url": report.base_url, "model": report.model,
+                          "prompt": report.prompt, "reachable": report.reachable,
+                          "model_listed": report.model_listed, "reply": report.reply,
+                          "error": report.error, "seconds": round(report.seconds, 3)},
+                         indent=2))
+        return 0 if report.ok else 1
+
+    lines = ["Charta model test", "=" * 17,
+             f"provider  {report.provider}",
+             f"endpoint  {report.base_url}",
+             f"model     {report.model}",
+             "",
+             f"prompt    {report.prompt}",
+             ""]
+    if report.reachable:
+        lines.append("[OK  ] reachable   provider answered on /models")
+    else:
+        lines.append("[FAIL] reachable   no answer on /models")
+        lines.append("       └─ start it (Ollama: `ollama serve`) or set CHARTA_BASE_URL")
+    if report.model_listed is None:
+        lines.append("[OK  ] model       provider cannot list models (not checked)")
+    elif report.model_listed:
+        lines.append(f"[OK  ] model       {report.model} is offered by the provider")
+    else:
+        lines.append(f"[FAIL] model       {report.model} is not offered by the provider")
+        lines.append(f"       └─ set [models] generation or run: ollama pull {report.model}")
+    if report.reply:
+        lines.append(f'[OK  ] answer      "{report.reply}" ({report.seconds:.1f}s)')
+    else:
+        lines.append(f"[FAIL] answer      {report.seconds:.1f}s")
+        lines.append(f"       └─ {report.error}")
+
+    if report.ok:
+        lines += ["", "Status: PASS — the model is answering through Charta."]
+    else:
+        hint = (f"\nTry `charta doctor` for the full picture, or `charta testmodel "
+                f'--prompt "hi" --timeout 30` for a slower model.')
+        lines += ["", "Status: FAIL — the model did not answer." + hint]
+    print("\n".join(lines))
+    return 0 if report.ok else 1
+
+
 def cmd_open(args: argparse.Namespace) -> int:
     """Native window (Electron or pywebview), or the default browser as a fallback."""
     import os
@@ -386,6 +439,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.add_argument("--no-ping", action="store_true", help="skip the provider reachability check")
     p.set_defaults(fn=cmd_doctor)
+    p = sub.add_parser("testmodel", help="ask the configured model 'hello' and show the reply")
+    p.add_argument("--prompt", default="hello", help="prompt to send (default: hello)")
+    p.add_argument("--timeout", type=float, default=30.0, help="seconds to wait for the answer")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_testmodel)
     p = sub.add_parser("install-shell"); p.set_defaults(fn=lambda a: cmd_shell(a, True))
     p = sub.add_parser("uninstall-shell"); p.set_defaults(fn=lambda a: cmd_shell(a, False))
     p = sub.add_parser("watchd", help="run the background watcher for every watched folder")

@@ -59,8 +59,8 @@ Headline features (priority order):
   build step, and the UI must keep working without it (browser and `charta open`
   stay supported).
 - CLI: `charta` (typer/argparse): `watch, unwatch, status, proposals,
-  approve, undo, ask, charter, serve, open, doctor, logs, install-shell,
-  uninstall-shell`.
+  approve, undo, ask, charter, serve, open, doctor, testmodel, logs,
+  install-shell, uninstall-shell`.
   `open` is the native window (pywebview when installed, browser fallback) and
   takes `--debug` to keep browser keys; `serve` is the plain local HTTP server.
 - Shell: HKCU registry `...Directory\shell\Charta` and

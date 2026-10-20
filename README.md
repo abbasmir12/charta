@@ -90,6 +90,7 @@ cd ..
 python -m charta.cli open ./demo         # pywebview window, or your browser
 python -m charta.cli serve --port 8123   # plain local server
 python -m charta.cli doctor              # why won't it start? (read-only)
+python -m charta.cli testmodel           # ask the model "hello" and print its reply
 python -m charta.cli logs                # startup, errors and the exit reason
 ```
 
@@ -99,7 +100,10 @@ folder you clicked. `charta uninstall-shell` removes it.
 
 **On Windows, start here:** `python -m charta.cli doctor` prints a read-only
 readiness report (provider, icon, pywebview, DWM, shell entry, safety guard).
-Full runbook and the visual checklist: [`docs/WINDOWS.md`](docs/WINDOWS.md).
+Then `python -m charta.cli testmodel` sends a one-word prompt end to end and shows
+the model's reply with a PASS/FAIL status — the fastest way to prove the AI is
+actually wired up. Full runbook and the visual checklist:
+[`docs/WINDOWS.md`](docs/WINDOWS.md).
 
 ## Desktop app (Electron)
 

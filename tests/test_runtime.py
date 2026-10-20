@@ -102,3 +102,25 @@ def test_logs_command_runs(tmp_path, capsys, monkeypatch):
     monkeypatch.setenv("CHARTA_STATE_DIR", str(tmp_path))
     assert cli.main(["logs", "--lines", "5"]) == 0
     assert "charta.log" in capsys.readouterr().out
+
+
+def test_testmodel_command_reports_pass(fake_provider, capsys, monkeypatch):
+    from charta import cli
+
+    fake_provider.reply = lambda payload: "Hi! I'm a local model."
+    monkeypatch.setenv("CHARTA_BASE_URL", fake_provider.base_url)
+    monkeypatch.setenv("CHARTA_MODEL", "fake-model")
+    assert cli.main(["testmodel"]) == 0
+    out = capsys.readouterr().out
+    assert "Charta model test" in out
+    assert "Hi! I'm a local model." in out and "Status: PASS" in out
+
+
+def test_testmodel_command_fails_cleanly_when_unreachable(capsys, monkeypatch):
+    from charta import cli
+
+    monkeypatch.setenv("CHARTA_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setenv("CHARTA_MODEL", "fake-model")
+    assert cli.main(["testmodel"]) == 1
+    out = capsys.readouterr().out
+    assert "Status: FAIL" in out and "reachable" in out

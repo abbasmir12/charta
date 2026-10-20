@@ -41,6 +41,16 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-20: add `charta testmodel` — a one-word end-to-end model check. It pings
+  the provider, verifies the configured model is actually offered, sends `hello`
+  through `/chat/completions`, and prints the reply plus a PASS/FAIL status
+  (`--prompt`, `--timeout`, `--json`). Core function `doctor.test_model` returns a
+  `ModelTest` report and never raises. Files: `charta/core/doctor.py`,
+  `charta/cli.py`, `README.md`, `docs/WINDOWS.md`, `AGENTS.md`,
+  `tests/test_openai_compat.py`, `tests/test_runtime.py`. Verified: `pytest -q`
+  162 passed; live run shows PASS against a fake OpenAI endpoint and a clear
+  FAIL+exit 1 when the provider is unreachable.
+
 - 2026-10-20: remove embeddings completely; Ask is now lexical. `charta/core/ask.py`
   ranks chunks with BM25 keywords plus explainable signals: a per-file description
   (doc type, vendor, date, amount), filename matches, phrase/bigram matches,
@@ -156,6 +166,7 @@ cd desktop && npm test && npm run smoke    # unit tests + 9 headless routes
 cd desktop && npm start                    # Electron desktop app
 
 python3 -m charta.cli doctor               # read-only readiness report
+python3 -m charta.cli testmodel            # send 'hello' to the model, show reply + PASS/FAIL
 python3 -m charta.cli logs                 # log tail + running session
 
 # default local provider

@@ -62,13 +62,11 @@ def test_command_prefers_the_real_electron_binary_over_the_shim(app_dir, monkeyp
     assert argv is not None and argv[0] == str(real) and argv[1] == "."
 
 
-def test_command_falls_back_to_npx_when_electron_is_missing(app_dir, monkeypatch):
+def test_command_is_none_when_electron_binary_is_missing(app_dir):
+    """A present shell folder without Electron means fall back, never npx-hang."""
     (app_dir / "Charta.exe").unlink()
-    monkeypatch.setattr(electron, "npx_bin", lambda: "/usr/bin/npx")
-    argv = electron.command(port=9, app=app_dir)
-    assert argv is not None and argv[:4] == ["/usr/bin/npx", "--no-install", "electron", "."]
-    monkeypatch.setattr(electron, "npx_bin", lambda: None)
     assert electron.command(port=9, app=app_dir) is None
+    assert "npm install" in electron.install_hint()
 
 
 def test_run_opens_electron_without_starting_a_second_backend(monkeypatch, tmp_path, capsys):
@@ -104,6 +102,7 @@ def test_run_opens_electron_without_starting_a_second_backend(monkeypatch, tmp_p
 
     monkeypatch.setattr(electron, "launch", fake_launch)
     monkeypatch.setattr(desktop, "wait_ready", lambda *a, **k: True)
+    monkeypatch.setattr(desktop, "health_ok", lambda *a, **k: True)
     monkeypatch.setattr(desktop, "_serve_in_thread", explode)
 
     cfg = AppConfig(state_dir=str(tmp_path / "state"), port=0)
@@ -131,6 +130,8 @@ def test_run_falls_back_to_the_browser_when_the_window_dies_instantly(monkeypatc
 
     monkeypatch.setattr(electron, "launch", lambda **kw: Dead())
     monkeypatch.setattr(desktop, "wait_ready", lambda *a, **k: False)
+    monkeypatch.setattr(desktop, "health_ok", lambda *a, **k: False)
+    monkeypatch.setattr(desktop, "_serve_in_thread", lambda *a, **k: None)
     monkeypatch.setattr(desktop.webbrowser, "open", lambda url, *a, **k: opened.append(url))
     opened: list[str] = []
     monkeypatch.setattr(desktop, "_keep_alive", lambda: 0)
@@ -138,7 +139,7 @@ def test_run_falls_back_to_the_browser_when_the_window_dies_instantly(monkeypatc
     cfg = AppConfig(state_dir=str(tmp_path / "state"), port=0)
     assert desktop.run(cfg) == 0  # the browser kept the UI alive
     assert opened and opened[0].startswith("http://127.0.0.1:")
-    assert "could not start" in capsys.readouterr().out
+    assert "closed before it was ready" in capsys.readouterr().out
 
 
 def test_run_skips_electron_when_the_browser_was_requested(monkeypatch, tmp_path):
@@ -166,6 +167,8 @@ def test_launch_sets_up_a_process_group(monkeypatch, app_dir, tmp_path):
     child = electron.launch(port=8123, folder=str(tmp_path), app=app_dir)
     assert isinstance(child, FakePopen)
     assert seen["kwargs"]["cwd"] == str(app_dir)
+    # The shell must spawn the launcher's own interpreter, not PATH's `python`.
+    assert seen["kwargs"]["env"]["CHARTA_PYTHON"] == electron.sys.executable
     if electron.sys.platform == "win32":
         assert "creationflags" in seen["kwargs"]
     else:

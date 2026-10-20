@@ -211,6 +211,9 @@ def run(cfg: AppConfig, folder: str = "", *, debug: bool | None = None,
     electron_argv = (electron_shell.command(port=chosen, folder=folder, debug=debug,
                                             app=electron_app)
                      if electron_app else None)
+    if electron_app and electron_argv is None:
+        print(f"charta: the desktop shell is present but Electron is not installed — "
+              f"{electron_shell.install_hint()}")
     view = "electron" if electron_argv else ("browser" if browser_only else _view_kind())
     applog.write_session(cfg, pid=os.getpid(), port=chosen, url=url, view=view, debug=debug)
     if view == "electron":
@@ -293,8 +296,13 @@ def _run_electron(cfg: AppConfig, app: pathlib.Path | None, port: int,
     else:
         # Not fatal: a hop or a slow first start shows up in the shell's own log.
         logger.warning("no health response on %s while the Electron window is up", port)
-        print("The Charta window is up but the backend has not answered yet."
-              f" If it stays empty, run: charta logs")
+        backend_log = applog.log_path(cfg).with_name("backend.log")
+        print("The Charta window did not report a healthy backend."
+              " Look at these logs for the reason:")
+        print(f"  shell:   {electron_log}")
+        print(f"  backend: {backend_log}")
+        print(f"  app:     {applog.log_path(cfg)}")
+        print("  tip: `charta testmodel` proves the model; `charta doctor` the rest.")
     applog.write_session(cfg, pid=child.pid, port=port, url=url_for(cfg.host, port, folder),
                          view="electron", debug=debug)
     try:
@@ -304,20 +312,51 @@ def _run_electron(cfg: AppConfig, app: pathlib.Path | None, port: int,
                 elapsed = time.time() - started
                 logger.info("electron exited with %s after %.1fs", code, elapsed)
                 applog.clear_session(cfg, f"electron exited ({code})")
-                if code and elapsed < 5.0:
-                    # The shell never came up (broken install, no display): the
-                    # user asked for a window, so give them the UI anyway.
-                    logger.warning("electron failed early; falling back to the browser")
-                    print("The Charta window could not start — opening your browser instead.")
-                    print(applog.read_log(cfg, lines=15))
-                    webbrowser.open(url_for(cfg.host, port, folder))
-                    return _keep_alive()
+                if not health_ok(cfg.host, port):
+                    # The shell exited and left no backend behind, so the user
+                    # got no UI at all. Give them the browser on a fresh port
+                    # instead of a dead one (the shell owned that backend).
+                    logger.warning("electron exited with no live backend; browser fallback")
+                    print("The Charta window closed before it was ready"
+                          " — opening your browser instead.")
+                    print(applog.read_log(cfg, lines=10))
+                    return _browser_fallback(cfg, folder, debug)
                 return code
             time.sleep(1)
     except KeyboardInterrupt:
         logger.info("launcher interrupted; the Charta window keeps running")
         print("Launcher stopped — the Charta window is still running (tray icon → Quit).")
         return 0
+
+
+def health_ok(host: str, port: int, timeout: float = 1.5) -> bool:
+    """One quick liveness probe (no wait loop)."""
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/api/health", timeout=timeout) as resp:
+            return resp.status < 500
+    except Exception:  # noqa: BLE001 — down is down
+        return False
+
+
+def _browser_fallback(cfg: AppConfig, folder: str, debug: bool) -> int:
+    """Last resort: run the backend ourselves and open the browser on it.
+
+    Best-effort: it starts a fresh backend on a free port and opens the browser
+    whether or not the health check passes, because a dead browser tab is still
+    closer to the UI than exiting with nothing.
+    """
+    port = free_port(cfg.host)
+    url = url_for(cfg.host, port, folder)
+    _serve_in_thread(cfg.host, port, debug)
+    if not wait_ready(cfg.host, port, timeout=15.0):
+        print("Charta's backend did not answer — run `charta doctor` for the reason.")
+    applog.write_session(cfg, pid=os.getpid(), port=port, url=url, view="browser", debug=debug)
+    print(f"Charta is running on {url}")
+    webbrowser.open(url)
+    try:
+        return _keep_alive()
+    finally:
+        applog.clear_session(cfg, "browser fallback ended")
 
 
 def _run_window(cfg: AppConfig, url: str, debug: bool) -> int:
@@ -361,5 +400,5 @@ def group_taskbar() -> bool:
 
 
 __all__ = ["APP_TITLE", "backend_command", "choose_port", "free_port", "group_taskbar",
-           "port_is_free", "run", "supported_kwargs", "url_for", "wait_ready",
+           "health_ok", "port_is_free", "run", "supported_kwargs", "url_for", "wait_ready",
            "window_kwargs"]

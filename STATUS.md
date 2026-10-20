@@ -41,6 +41,20 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-20: fix "charta open closes with nothing to show". Root cause: when the
+  Electron binary is not downloaded (`desktop/node_modules/electron/dist/...`
+  missing), `command()` fell back to `npx --no-install electron .`, which resolves
+  slowly (~20 s) or fails and exits 0 — the launcher then reported "the window is
+  up" without checking, and even its browser fallback pointed at a port where no
+  backend was listening. Now: no Electron binary means no Electron (fall through
+  to pywebview/browser with a printed `cd desktop && npm install` hint); the shell
+  is told to spawn the launcher's own interpreter via `CHARTA_PYTHON`; on failure
+  the launcher probes the port and starts its own backend on a fresh port before
+  opening the browser; and it prints the shell/backend/app log paths instead of a
+  false "window is up". Files: `charta/shell/electron.py`,
+  `charta/shell/desktop.py`, `docs/WINDOWS.md`, `tests/test_electron.py`.
+  Verified: `pytest -q` 162 passed.
+
 - 2026-10-20: default generation model is now `gemma4:e4b` (what Ollama actually
   ships on this machine); config default, `config.toml` and the pull commands in
   README/WINDOWS/STATUS all updated. Files: `charta/core/config.py`,

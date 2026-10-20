@@ -150,6 +150,9 @@ message died with the console window. Now:
   47123 instead`);
 - if the native window dies within two seconds Charta falls back to your browser
   instead of quitting;
+- if the Electron shell is present but its binary was never downloaded,
+  `charta open` says so and uses the pywebview window (or your browser) instead
+  of hanging on `npx`; fix it with `cd desktop && npm install`;
 - `%APPDATA%\Charta\session.json` records the running instance, and `charta logs`
   says "Charta is still running" only when something actually answers on that port.
 

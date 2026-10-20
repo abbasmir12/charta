@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import os
 import pathlib
-import shutil
 import subprocess
 import sys
 
@@ -64,21 +63,17 @@ def electron_bin(app: pathlib.Path) -> str | None:
     return None
 
 
-def npx_bin() -> str | None:
-    """`npx`, used only as a last resort when node_modules has no Electron.
-
-    Without the marker check below this would happily download a 100 MB
-    dependency at launch time, which is not something a right-click should do.
-    """
-    return shutil.which("npx") or shutil.which("npx.cmd")
-
-
 def is_packaged(app: pathlib.Path, binary: str) -> bool:
     """True when ``binary`` is the app itself rather than an Electron runtime.
 
     A packaged app takes no script argument; `electron .` does.
     """
     return pathlib.Path(binary).parent == app
+
+
+def install_hint() -> str:
+    """One-line fix shown when the shell folder exists but Electron is not installed."""
+    return "run: cd desktop && npm install     (Electron's binary downloads on install)"
 
 
 def command(port: int, folder: str = "", debug: bool = False,
@@ -88,17 +83,20 @@ def command(port: int, folder: str = "", debug: bool = False,
     ``--port`` is passed through so the shell's backend binds the port Python
     already verified as free; ``--folder`` lands the setup window on the folder
     the user right-clicked.
+
+    Electron is only used when its real binary exists under ``node_modules``.
+    Earlier this fell back to `npx --no-install electron .`, but when the binary
+    is missing npx either resolves slowly (≈20 s) or fails, which looked exactly
+    like "Charta opened nothing and closed by itself". A missing install now
+    means "use pywebview/browser", which always shows the UI.
     """
     app = app or desktop_dir()
     if app is None:
         return None
     resolved = binary or electron_bin(app)
     if resolved is None:
-        npx = npx_bin()
-        if npx is None:
-            return None
-        argv = [npx, "--no-install", "electron", "."]
-    elif is_packaged(app, resolved):
+        return None
+    if is_packaged(app, resolved):
         argv = [resolved]
     else:
         argv = [resolved, "."]
@@ -134,6 +132,13 @@ def launch(port: int, folder: str = "", debug: bool = False,
     if argv is None:
         return None
     kwargs: dict = {"cwd": str(app), "stdin": subprocess.DEVNULL}
+    # The shell must spawn the *same* interpreter that ran `charta open` (the
+    # venv one), not whatever `python` happens to be on the desktop's PATH — a
+    # system Python without Charta installed would die on import and look like
+    # "the backend never answered".
+    env = dict(os.environ)
+    env["CHARTA_PYTHON"] = sys.executable
+    kwargs["env"] = env
     out = None
     try:
         if log_file is not None:
@@ -160,4 +165,4 @@ def _spawn(argv: list[str], kwargs: dict) -> subprocess.Popen:
 
 
 __all__ = ["REPO_DESKTOP", "available", "command", "desktop_dir", "electron_bin",
-           "is_packaged", "launch", "npx_bin"]
+           "is_packaged", "install_hint", "launch"]

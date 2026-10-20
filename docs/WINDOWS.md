@@ -26,6 +26,11 @@ pip install pywebview        :: native window (optional; without it we use your 
 
 `pip install -e ".[native]"` does both in one step if you prefer an editable install.
 
+> The `charta` command only exists after you install the project itself
+> (`pip install -e .` or `pip install -e ".[native]"`). `pip install -r
+> requirements.txt` installs dependencies only; without the project install, run
+> commands as `python -m charta.cli ...` instead.
+
 ## 3. Provider
 
 3a. Local (default):

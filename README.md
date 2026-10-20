@@ -62,7 +62,8 @@ heuristics and tells you which provider and URL failed.
 ## Quickstart
 
 ```bash
-pip install -r requirements.txt   # or pip install -e .
+pip install -e ".[native]"        # installs the `charta` command + native window
+# (just dependencies: pip install -r requirements.txt, then use `python -m charta.cli`)
 # default local provider (required for AI; everything degrades gracefully without it)
 ollama serve
 ollama pull gemma4:e4b

@@ -41,6 +41,11 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-20: document that the `charta` command comes from installing the
+  project (`pip install -e ".[native]"`), not from `pip install -r
+  requirements.txt`. Files: `README.md`, `docs/WINDOWS.md`. Verified: docs only,
+  `pytest -q` 162 passed.
+
 - 2026-10-20: fix "charta open closes with nothing to show". Root cause: when the
   Electron binary is not downloaded (`desktop/node_modules/electron/dist/...`
   missing), `command()` fell back to `npx --no-install electron .`, which resolves

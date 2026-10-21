@@ -28,6 +28,11 @@ from ..core import record
 from ..core import tools
 from ..core import watchlist
 from ..core.ask import answer_query, build_index, index_signature
+from ..core.agent import TOOL_SPECS, ask_with_tools
+
+TOOL_HINT = ("search_index looks through the folder's metadata (names, descriptions, "
+             "tags, dates, amounts); read_file reads one file; list_files shows what "
+             "is there. Every call is shown above as it happens.")
 from ..core.charter import create_charter_from_text, load_charter, save_charter
 from ..core.config import AppConfig
 from ..core.extract import VisionFn, extract_text
@@ -1038,12 +1043,16 @@ def ask_page(folder: str = "", q: str = "") -> str:
                           f'<span class="chip">{cfg.llm_provider} · {cfg.generation_model}</span>')}
 <div id="steps" class="steps-wrap" aria-live="polite"></div>
 <div class="chatlog" id="log" role="log" aria-live="polite">
-<div class="msg ai">Ask anything about this folder — I quote the file and page I used, and I won't invent an answer.</div></div>
-<div class="row"><input id="q" type="text" aria-label="Your question" placeholder="e.g. What electricity bills do we have for March?" value="{escape_attr(q)}">
+<div class="msg ai">Ask anything about this folder — I quote the file and page I used, and I won't invent an answer.</div></div><div class="row"><input id="q" type="text" aria-label="Your question" placeholder="e.g. What electricity bills do we have for March?" value="{escape_attr(q)}">
 <button type="button" class="btn btn-icon" onclick="toggleMic('q')" aria-label="Ask by voice">{icon("mic", 18)}</button>
 <button type="button" class="btn btn-primary" onclick="askFolder()"><span class="icon">{icon("arrow-right", 16)}</span> Ask</button></div>
 <div class="row" style="margin-top:var(--s3)">{starters}</div>
-<div id="ans"></div>"""
+<div id="ans"></div>
+<section class="section"><div class="section-head">
+<h2 class="section-title">Tools the model can call</h2>
+<span class="section-note">The model works from the index, not by reading everything</span></div>
+<div class="row">{''.join(f'<span class="chip mono">{t["name"]}</span>' for t in TOOL_SPECS)}</div>
+<p class="muted">{TOOL_HINT}</p></section>"""
     if q.strip():
         inner += (f'<script>window.addEventListener("load",()=>askFolder('
                   f'{q.strip()!r}));</script>')
@@ -1433,10 +1442,27 @@ def _run_ask(job: Job, folder: str, question: str) -> None:
             job.extra.update({"files": 0, "provider": cfg.llm_provider,
                               "model": cfg.generation_model})
             return
+        # The agent: the model gets the index catalogue and the tools, and
+        # calls them itself. If it does not use a tool, the plain retrieval
+        # path answers instead — the user always gets an answer.
         steps: list[dict] = []
         job.step("work", f"Looking for “{question}”…")
-        ans = answer_query(question, idx, client, steps=steps)
+        agent = ask_with_tools(question, folder, client, steps=steps)
         for s in steps:
+            job.step(s["kind"], s["text"])
+        if agent.used_tools and agent.answer:
+            job.answer = agent.answer
+            job.citations = [{"file": c.file, "page": c.page} for c in agent.citations]
+            job.extra.update({"tools": [c.name for c in agent.calls],
+                              "files": len(idx), "provider": cfg.llm_provider,
+                              "model": cfg.generation_model, "cached": cached})
+            job.state = "done"
+            return
+        if agent.answer and not agent.used_tools:
+            job.step("done", "The model answered from the catalogue.")
+        steps2: list[dict] = []
+        ans = answer_query(question, idx, client, steps=steps2)
+        for s in steps2:
             job.step(s["kind"], s["text"])
         job.answer = ans.text
         job.citations = [{"file": c.file, "page": c.page} for c in ans.citations]

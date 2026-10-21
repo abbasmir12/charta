@@ -41,6 +41,23 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **the model calls the tools itself.** Charta hands the model a
+  catalogue of the folder's metadata (every file with its description, tags
+  and fields) and three tools — `search_index`, `read_file`, `list_files` —
+  and runs whatever it asks for: search the index, read a file (from the
+  index, so it is instant), list what is there. The model then answers from
+  what it read, and the files it used become the citations. The protocol is
+  plain text (a JSON action), so it works with every OpenAI-compatible
+  endpoint, including local models without function-calling support; a model
+  that never calls a tool still gets the grounded answer from the retrieval
+  path. Every call appears in the Ask timeline ("Calling search_index(q=
+  'sponsorship 2026') → 1 match"), and the Ask page lists the tools it has.
+  Files: `charta/core/agent.py`, `charta/core/llm.py` (multi-turn `chat`),
+  `charta/web/app.py`, `charta/web/static/app.js`, `charta/web/static/app.css`,
+  `charta/cli.py`, `README.md`, `tests/test_agent.py`. Verified: `pytest -q` 208
+  passed; the whole loop (search → read → answer, with citations) was run
+  against a scripted model.
+
 - 2026-10-21: **a metadata index, a real search, and a work timeline.** Every
   file Charta reads is now described once and kept in the folder's own SQLite
   index (`.charta/index.db`): description, document type, tags, the fields

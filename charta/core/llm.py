@@ -124,6 +124,22 @@ class LLMClient:
         return ids or None
 
     # -- generation --------------------------------------------------------
+    def chat(self, messages: Sequence[dict], system: str = "",
+             model: str | None = None, timeout: float | None = None) -> LLMResult:
+        """A conversation with the model (used by the tool-calling agent)."""
+        payload_messages: list[dict] = []
+        if system:
+            payload_messages.append({"role": "system", "content": system})
+        payload_messages.extend(messages)
+        payload = {"model": model or self.cfg.generation_model,
+                   "messages": payload_messages, "stream": False}
+        try:
+            resp = self._request("POST", "/chat/completions", payload, timeout)
+        except RuntimeError as e:
+            return LLMResult(ok=False, error=str(e))
+        text = self._first_message(resp)
+        return LLMResult(ok=bool(text), text=text)
+
     def generate(self, prompt: str, system: str = "", json_mode: bool = False,
                  images: Sequence[str | pathlib.Path] | None = None,
                  model: str | None = None, timeout: float | None = None) -> LLMResult:

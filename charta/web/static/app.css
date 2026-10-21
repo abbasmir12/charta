@@ -175,6 +175,8 @@ table.grid tbody tr:hover td{background:var(--raised)}
 .step.warn .icon{color:var(--warning)}
 .step.active .icon{color:var(--accent1);animation:pulse 1.4s var(--ease) infinite}
 .step.active .step-text{color:var(--text)}
+.step.tool .step-text{color:var(--text);font-family:var(--font-mono);font-size:var(--fs-label)}
+.step.tool .icon{color:var(--accent1)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .cite{display:inline-flex;align-items:center;gap:var(--s1);margin:var(--s3) var(--s1) 0 0}
 

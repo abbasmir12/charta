@@ -192,6 +192,11 @@ for `/api/health`, and everything else goes through the same guarded core.
   open in the system app, read in place, or ask about that file
 - **A work timeline in Ask**: every step is shown while it happens (read the
   index → matched N files → asking provider/model)
+- **The model calls tools**: Charta hands the model a catalogue of the index
+  and three tools — `search_index`, `read_file`, `list_files` — and it uses
+  them itself, so the answer comes from the folder's metadata and the files
+  that matter, not from re-reading everything. Every call is shown in the
+  timeline; a model that ignores the tools still gets a grounded answer
 - Web UI (setup/overview/review/outputs/gaps/ask/activity/settings/styleguide), SSE live strip, voice hook (Web Speech in browser, faster-whisper in CLI)
 - Native window with dark title bar, Mica + solid fallback, taskbar icon/grouping, tray, remembered geometry, custom dropdowns and folder picker (see *Native-feel polish*), plus the Electron desktop shell
 - **Design system with tests**: WCAG-AA-checked palette (both themes), 4px spacing scale, 7-step type scale, and every `var(--token)` proven defined — `tests/test_design.py`

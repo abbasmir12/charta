@@ -307,10 +307,11 @@ function renderAnswer(j){
 function renderSteps(steps,state){
  const box=document.getElementById('steps');
  if(!box)return;
- const icons={work:'scan',model:'sparkles',done:'check',warn:'alert'};
+ const icons={work:'scan',model:'sparkles',tool:'search','tool-done':'check',done:'check',warn:'alert'};
  box.innerHTML='<div class="steps">'+steps.map((s,i)=>{
   const last=i===steps.length-1&&state==='running';
-  return '<div class="step '+(last?'active ':'')+(s.kind==='warn'?'warn':(s.kind==='done'?'done':''))+'">'
+  const kind=s.kind==='tool'?'tool '+(last?'active':''):(s.kind==='tool-done'?'done':s.kind);
+  return '<div class="step '+kind+'">'
    +'<span class="icon">'+icon(icons[s.kind]||'info',15)+'</span>'
    +'<span class="step-text">'+escHtml(s.text)+'</span></div>';
  }).join('')+'</div>';

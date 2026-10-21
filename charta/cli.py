@@ -12,6 +12,7 @@ from .core import proposals as prop_store
 from .core import record
 from .core import watchlist as watchlist_mod
 from .core.ask import answer_query, build_index
+from .core.agent import ask_with_tools
 from .core.charter import (create_charter_from_text, load_charter, preset_charter,
                            save_charter)
 from .core import config as config_mod
@@ -198,6 +199,18 @@ def cmd_ask(args: argparse.Namespace) -> int:
     if not idx:
         print(f"Nothing indexed in {folder} yet — run: charta watch --folder {folder} --scan")
         return 1
+    # The agent: the model gets the index and the tools, and calls them itself.
+    steps: list[dict] = []
+    agent = ask_with_tools(args.question, folder, client, steps=steps)
+    for s in steps:
+        print(f"  · {s['text']}")
+    if agent.used_tools and agent.answer:
+        print(agent.answer)
+        for c in agent.citations:
+            print(f"  [{c.file} p{c.page}] {c.excerpt[:120]}")
+        print(f"  (tools: {', '.join(c.name for c in agent.calls)}; "
+              f"model {cfg.llm_provider}/{cfg.generation_model})")
+        return 0
     ans = answer_query(args.question, idx, client)
     print(ans.text)
     for c in ans.citations:

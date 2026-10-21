@@ -38,6 +38,23 @@ pip install pywebview        :: native window (optional; without it we use your 
 
 ## 3. Provider
 
+The endpoint and the key come from **your** `config.toml` first, and the
+environment second:
+
+```toml
+[llm]
+provider = "openrouter"     # ollama | lmstudio | llamacpp | vllm | openai |
+                             # openrouter | groq | together | deepseek | custom
+api_key = "sk-or-v1-..."     # optional here; CHARTA_API_KEY is the fallback
+```
+
+```bat
+set CHARTA_API_KEY=sk-or-v1-...   :: used only when the file has no key
+```
+
+`charta testmodel` prints the provider, the endpoint, the model and the config
+file it actually read.
+
 3a. Local (default):
 
 ```bat

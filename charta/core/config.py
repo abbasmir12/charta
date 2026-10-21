@@ -1,9 +1,14 @@
-"""Central config: everything configurable lives in config.toml (repo root).
+"""Central config: everything configurable lives in config.toml (yours).
+
+Search order for the file: CHARTA_CONFIG → next to the installed package →
+the per-user state dir → the current directory. config.toml is git-ignored, so
+a `git pull` can never undo your settings.
 
 Environment overrides (handy for CI / CI secrets / one-off runs):
     CHARTA_BASE_URL    -> [llm] base_url
-    CHARTA_API_KEY     -> [llm] api_key (fallback: OPENAI_API_KEY for cloud providers)
+    CHARTA_API_KEY     -> [llm] api_key (the file wins; this is the fallback)
     CHARTA_MODEL       -> [models] generation
+    CHARTA_CONFIG      -> the config.toml to read
 """
 from __future__ import annotations
 
@@ -94,9 +99,15 @@ class AppConfig:
                 file_url = ""
         base_url = (env_url or file_url
                     or PROVIDER_BASE_URLS.get(provider, PROVIDER_BASE_URLS["ollama"]))
-        api_key = os.environ.get("CHARTA_API_KEY", "") or str(llm.get("api_key", ""))
+        # The key comes from your config.toml first, then the environment.
+        # config.toml belongs to the machine (it is git-ignored), so a key in
+        # it never leaves your disk; CHARTA_API_KEY is the fallback for
+        # machines that keep secrets out of files.
+        api_key = str(llm.get("api_key", "")).strip()
+        if not api_key:
+            api_key = os.environ.get("CHARTA_API_KEY", "").strip()
         if not api_key and provider in _CLOUD_PROVIDERS:
-            api_key = os.environ.get("OPENAI_API_KEY", "")
+            api_key = os.environ.get("OPENAI_API_KEY", "").strip()
 
         return cls(
             port=int(app.get("port", 8123)),

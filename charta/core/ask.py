@@ -255,8 +255,16 @@ def _bm25(query_terms: list[str], doc_terms: list[str], df: Counter,
 def build_index(folder: str | pathlib.Path,
                 exclude_sensitive: bool = True,
                 vision: VisionFn | None = None) -> list[dict]:
-    """Chunk every readable file and attach the signals used for ranking."""
+    """Chunk every readable file and attach the signals used for ranking.
+
+    An empty folder is refused: ``Path("")`` means "the current directory",
+    which would silently index whatever the app happens to be sitting in.
+    """
+    if not str(folder).strip():
+        return []
     folder = pathlib.Path(folder)
+    if not folder.is_dir():
+        return []
     index: list[dict] = []
     for p in sorted(folder.rglob("*")):
         if not p.is_file() or ".charta" in p.parts:

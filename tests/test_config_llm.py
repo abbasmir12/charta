@@ -70,3 +70,16 @@ def test_llm_graceful_never_raises():
     assert isinstance(r.ok, bool)
     assert r.text or r.error
     assert isinstance(llm_ping("http://localhost:9/v1"), bool)
+
+
+def test_the_config_file_wins_over_the_environment_for_the_key(monkeypatch, tmp_path):
+    """Your config.toml first, the environment second."""
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('[llm]\nprovider = "openrouter"\napi_key = "from-file"\n',
+                        encoding="utf-8")
+    monkeypatch.setenv("CHARTA_API_KEY", "from-env")
+    assert AppConfig.load(cfg_file).llm_api_key == "from-file"
+
+    # With no key in the file, the environment is the fallback.
+    cfg_file.write_text('[llm]\nprovider = "openrouter"\n', encoding="utf-8")
+    assert AppConfig.load(cfg_file).llm_api_key == "from-env"

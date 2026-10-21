@@ -41,6 +41,22 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **Ask is now strictly about one folder.** Two bugs made "no
+  answer": an empty folder parameter meant `Path("")` = *the current
+  directory*, so the Ask page (reached from the sidebar on the Folders page,
+  where no folder is in the URL) silently indexed whatever the app was sitting
+  in — the whole repository — and the request took forever. `build_index` now
+  refuses an empty or missing folder, `/api/ask` answers "pick a folder first",
+  the Ask page offers the watched folders when none is chosen, the sidebar only
+  shows folder pages once a folder is picked, and every answer says which
+  folder, provider and model produced it. Also: the API key now comes from
+  `config.toml` first and the environment second (the file is yours and
+  git-ignored), as asked. Files: `charta/core/ask.py`, `charta/core/config.py`,
+  `charta/web/app.py`, `docs/WINDOWS.md`, `tests/test_web_ui.py`,
+  `tests/test_config_llm.py`. Verified: `pytest -q` 195 passed; a folder with
+  `sponsorship_2026.txt` answers "i want to know about the 2026 sponsorship"
+  with the file and page cited.
+
 - 2026-10-21: **`config.toml` belongs to the user (one file, no overlay).**
   `config.toml` was tracked in git, so `git pull` kept restoring the file
   people had edited — which is why changing the provider appeared to do

@@ -178,11 +178,16 @@ def _basename(folder: str) -> str:
 
 
 def _nav(items: list[str], page: str, fq: str) -> str:
-    return "".join(
-        f'<a href="/{n}?folder={fq}" class="{"active" if page == n else ""}"'
-        f'{" aria-current=\"page\"" if page == n else ""}>'
-        f'<span class="icon">{icon(n)}</span> {NAV_LABELS[n]}</a>'
-        for n in items)
+    """The rail. Folder pages are only offered when a folder is chosen."""
+    out = []
+    for n in items:
+        if n != "folders" and not fq:
+            continue  # nothing to show yet — the Folders page picks one
+        out.append(
+            f'<a href="/{n}?folder={fq}" class="{"active" if page == n else ""}"'
+            f'{" aria-current=\"page\"" if page == n else ""}>'
+            f'<span class="icon">{icon(n)}</span> {NAV_LABELS[n]}</a>')
+    return "".join(out)
 
 
 def shell(page: str, folder: str, inner: str, mode: str = "suggest", label: str = "") -> str:
@@ -873,11 +878,27 @@ def gaps(folder: str = "") -> str:
 def ask_page(folder: str = "") -> str:
     ch, mode = _page(folder, "ask")
     fq = quote(folder)
+    cfg = _cfg()
+    if not folder:
+        # Asking always means asking about *one* folder. Offer the watched ones
+        # instead of silently searching whatever the app is sitting in.
+        watched = watchlist.folders(cfg)
+        choices = "".join(
+            f'<a class="btn" href="/ask?folder={quote(f)}">'
+            f'<span class="icon">{icon("folder", 16)}</span> {_basename(f)}</a>' for f in watched)
+        body = empty_state(
+            "ask", "Which folder?",
+            "Charta answers about one folder at a time — pick the one you mean.",
+            choices or '<a class="btn btn-primary" href="/folders">Open folders</a>')
+        inner = f"""{page_head("Ask", "Answers cite file and page. If it is not in the folder, Charta says so.")}
+{body}"""
+        return shell("ask", folder, inner, mode)
     starters = "".join(
         f'<button type="button" class="chip" onclick="askFolder({q!r})">{q}</button>'
         for q in (["What is in this folder?", "Summarise the newest files"]
                   + ([f"What about {ch.expected[0]}?"] if ch and ch.expected else [])))
-    inner = f"""{page_head("Ask", "Answers cite file and page. If it is not in the folder, Charta says so.")}
+    inner = f"""{page_head("Ask", f"About {_basename(folder)} — answers cite file and page.",
+                          f'<span class="chip">{cfg.llm_provider} · {cfg.generation_model}</span>')}
 <div class="chatlog" id="log" role="log" aria-live="polite">
 <div class="msg ai">Ask anything about this folder — I quote the file and page I used, and I won't invent an answer.</div></div>
 <div class="row"><input id="q" type="text" aria-label="Your question" placeholder="e.g. What electricity bills do we have for March?">
@@ -1218,14 +1239,30 @@ def api_outputs(folder: str) -> JSONResponse:
 
 
 @app.post("/api/ask")
-async def api_ask(folder: str, req: Request) -> JSONResponse:
+async def api_ask(req: Request, folder: str = "") -> JSONResponse:
     body = await req.json()
+    question = str(body.get("q", "")).strip()
+    if not folder.strip():
+        return JSONResponse({"error": "no-folder",
+                             "message": "Pick a folder to ask about first.",
+                             "answer": "Pick a folder to ask about first.",
+                             "citations": []}, status_code=400)
+    if not question:
+        return JSONResponse({"error": "no-question", "message": "Type a question.",
+                             "answer": "Type a question.", "citations": []}, status_code=400)
     cfg = _cfg()
     client = LLMClient(cfg)
     idx = build_index(folder, vision=_vision(cfg, client))
-    ans = answer_query(str(body.get("q", "")), idx, client)
+    if not idx:
+        return JSONResponse({"answer": "That folder has nothing indexed yet — "
+                                      "scan it first and I will have something to read.",
+                             "citations": [], "files": 0,
+                             "provider": cfg.llm_provider, "model": cfg.generation_model})
+    ans = answer_query(question, idx, client)
     return JSONResponse({"answer": ans.text,
-                         "citations": [{"file": c.file, "page": c.page} for c in ans.citations]})
+                         "citations": [{"file": c.file, "page": c.page} for c in ans.citations],
+                         "folder": folder, "files": len(idx),
+                         "provider": cfg.llm_provider, "model": cfg.generation_model})
 
 
 @app.get("/api/health")

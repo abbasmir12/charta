@@ -297,3 +297,23 @@ def test_an_empty_watched_folder_says_so_instead_of_scanning(client, tmp_path):
     text = client.get("/overview", params={"folder": str(tmp_path)}).text
     assert "This folder is empty" in text
     assert "watching it" in text
+
+
+def test_asking_without_a_folder_says_so_instead_of_guessing(client):
+    """An empty folder used to mean 'the current directory' — the whole repo."""
+    res = client.post("/api/ask", params={"folder": ""}, json={"q": "what is in here?"})
+    assert res.status_code == 400
+    assert res.json()["error"] == "no-folder"
+    page = client.get("/ask").text
+    assert "Which folder?" in page
+
+
+def test_asking_uses_the_configured_provider_and_model(client, tmp_path, monkeypatch):
+    (tmp_path / "note.txt").write_text("The sponsorship for 2026 is 5000 EUR.", encoding="utf-8")
+    monkeypatch.setenv("CHARTA_MODEL", "fake-model")
+    body = client.post("/api/ask", params={"folder": str(tmp_path)},
+                       json={"q": "what is the 2026 sponsorship?"}).json()
+    assert body["files"] == 1
+    assert body["model"] == "fake-model"
+    assert body["provider"]
+    assert "sponsorship" in body["answer"].lower() or body["citations"]

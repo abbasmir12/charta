@@ -26,6 +26,8 @@ from .native_window import (APP_USER_MODEL_ID, ICON_PATH, WindowGeometry, load_g
                             polish_window, save_geometry)
 
 APP_TITLE = "Charta"
+# Exit code the Electron shell uses when another instance already holds the lock.
+ALREADY_RUNNING = 42
 _SERVER_ERROR: dict[str, str] = {"detail": ""}
 
 
@@ -215,6 +217,10 @@ def run(cfg: AppConfig, folder: str = "", *, debug: bool | None = None,
         print("charta: the desktop shell is present but Electron is not installed — "
               f"{electron_shell.install_hint(electron_app)}")
     view = "electron" if electron_argv else ("browser" if browser_only else _view_kind())
+    running = _running_instance(cfg)
+    if running:
+        print(f"charta: another Charta is already running on port {running.get('port')}"
+              " — that window will come to the front.")
     applog.write_session(cfg, pid=os.getpid(), port=chosen, url=url, view=view, debug=debug)
     if view == "electron":
         # Electron starts and supervises its own backend, so do not start one here.
@@ -311,6 +317,13 @@ def _run_electron(cfg: AppConfig, app: pathlib.Path | None, port: int,
             if code is not None:
                 elapsed = time.time() - started
                 logger.info("electron exited with %s after %.1fs", code, elapsed)
+                if code == ALREADY_RUNNING:
+                    # Another Charta owns the window; it was just brought to the
+                    # front. Opening a browser too would only confuse.
+                    print("Charta is already running — that window came to the front.")
+                    print("  (if it looks out of date, quit it from the tray and start again)")
+                    applog.clear_session(cfg, "another instance is running")
+                    return 0
                 applog.clear_session(cfg, f"electron exited ({code})")
                 if not health_ok(cfg.host, port):
                     # The shell exited and left no backend behind, so the user
@@ -336,6 +349,24 @@ def health_ok(host: str, port: int, timeout: float = 1.5) -> bool:
             return resp.status < 500
     except Exception:  # noqa: BLE001 — down is down
         return False
+
+
+def _running_instance(cfg: AppConfig) -> dict:
+    """The live Charta instance recorded in the session file, if there is one.
+
+    Read before the launcher overwrites the session: a second window would
+    otherwise fight the first one for the single-instance lock and for the port.
+    """
+    session = applog.read_session(cfg)
+    port = session.get("port")
+    if not isinstance(port, int):
+        return {}
+    host = str(session.get("host") or cfg.host)
+    with socket.socket() as sock:
+        sock.settimeout(0.4)
+        if sock.connect_ex((host, port)) == 0:
+            return session
+    return {}
 
 
 def _browser_fallback(cfg: AppConfig, folder: str, debug: bool) -> int:

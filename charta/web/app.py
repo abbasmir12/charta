@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import pathlib
 import threading
 import uuid
@@ -159,6 +160,9 @@ NAV_LABELS = {"folders": "Folders", "overview": "Overview", "files": "Files",
 NAV_GROUPS = [("Work", ["folders", "overview", "files", "review", "outputs", "gaps", "ask"]),
               ("Records", ["activity", "history"])]
 LOCAL_PROVIDERS = ("ollama", "lmstudio", "llamacpp", "vllm")
+# When this backend started — the Settings page shows it, so a window that is
+# running older code (a leftover instance) is obvious at a glance.
+_STARTED = datetime.datetime.now().isoformat(timespec="seconds")
 
 
 def icon(name: str, size: int = 18) -> str:
@@ -940,6 +944,7 @@ the next time you open it. Paused folders keep their analysis.</p></section>
 <span class="chip">{shell_kind}</span></div>
 <dl class="facts">
 <dt>Geometry</dt><dd class="mono">{cfg.state_path()}</dd>
+<dt>Backend started</dt><dd class="mono">{_STARTED}</dd>
 <dt>Debug keys</dt><dd>{'on — F5, Ctrl+R/F/P and DevTools work' if cfg.debug else 'off — browser keys are suppressed'}</dd>
 </dl></section>
 <section class="section"><div class="section-head">

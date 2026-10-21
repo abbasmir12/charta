@@ -41,6 +41,19 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **stop the double window and the stale window.** A Charta left
+  running in the tray (from before an update) held port 8123 and Electron's
+  single-instance lock, so the next `charta open` could not start: the shell
+  quit silently, the launcher took it for a crash and opened a browser as
+  well — the old window and a new browser side by side. Now the shell exits
+  with code 42 when another instance owns the window, the launcher says
+  "Charta is already running — that window came to the front" and does *not*
+  open a browser; the launcher also reports an already-running instance before
+  it starts, and Settings shows when the backend started, so a window running
+  old code is obvious. Files: `desktop/main.js`, `charta/shell/desktop.py`,
+  `charta/web/app.py`, `tests/test_electron.py`. Verified: `pytest -q` 190
+  passed.
+
 - 2026-10-21: the desktop shell now knows the new screens. The Electron window
   renders the server's pages (the sidebar is server-rendered), so a running
   app keeps showing the old navigation until the backend is restarted — but

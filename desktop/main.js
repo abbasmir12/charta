@@ -15,6 +15,8 @@ const windowState = require('./lib/window-state');
 
 const APP_ID = 'Charta.FolderWatcher';
 const TITLE = 'Charta';
+// Exit code the launcher reads as "another Charta instance is already running".
+const ALREADY_RUNNING = 42;
 // Window chrome must match the renderer's default dim-white theme (tokens.css),
 // otherwise a dark title bar flashes over light content before first paint.
 const CHROME = {
@@ -305,7 +307,13 @@ async function runRoutes(mode) {
 
 async function main() {
   const lock = app.requestSingleInstanceLock();
-  if (!lock) { app.quit(); return 0; }
+  if (!lock) {
+    // Another Charta is already running: it gets the focus request from the
+    // 'second-instance' event. Exit with a code the launcher understands, so it
+    // does not mistake this for a crash and open a browser as well.
+    app.exit(ALREADY_RUNNING);
+    return 0;
+  }
   app.on('second-instance', () => {
     if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
   });

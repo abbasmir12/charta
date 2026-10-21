@@ -13,7 +13,13 @@ import pytest
 
 from charta.core import applog
 from charta.core.config import AppConfig
-from charta.shell import desktop, electron
+from charta.shell import desktop
+from charta.shell import electron
+
+
+def pytest_fail(msg):
+    """Fail loudly from inside a patched helper."""
+    raise AssertionError(msg)
 
 
 @pytest.fixture
@@ -204,3 +210,30 @@ def test_the_desktop_shell_knows_every_screen_the_server_serves():
     source = (electron.REPO_DESKTOP / "main.js").read_text(encoding="utf-8")
     for item in NAV_ITEMS:
         assert f"/{item}" in source, f"main.js does not know the /{item} screen"
+
+
+def test_a_second_instance_is_recognised_instead_of_looking_like_a_crash(monkeypatch, tmp_path, capsys):
+    """Electron exits with code 42 when another instance owns the window."""
+    app_dir = tmp_path / "desktop"
+    app_dir.mkdir()
+    (app_dir / "main.js").write_text("// entry\n")
+    (app_dir / "Charta.exe").write_text("")
+    monkeypatch.setenv("CHARTA_DESKTOP", str(app_dir))
+    monkeypatch.setenv("CHARTA_STATE_DIR", str(tmp_path / "state"))
+
+    class Exited:
+        pid = 7
+
+        def poll(self):
+            return desktop.ALREADY_RUNNING
+
+    monkeypatch.setattr(electron, "launch", lambda **kw: Exited())
+    monkeypatch.setattr(desktop, "wait_ready", lambda *a, **k: False)
+    monkeypatch.setattr(desktop, "health_ok", lambda *a, **k: False)
+    monkeypatch.setattr(desktop, "_browser_fallback",
+                        lambda *a, **k: pytest_fail("must not open a browser"))
+
+    cfg = AppConfig(state_dir=str(tmp_path / "state"), port=0)
+    assert desktop.run(cfg) == 0
+    out = capsys.readouterr().out
+    assert "already running" in out

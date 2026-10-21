@@ -41,6 +41,19 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **charta stop now kills the whole family.** The user restarted
+  Charta ~100 times and kept seeing the stale UI, because Electron spawns its
+  own Python backend; stopping only the recorded (shell) pid orphans the
+  Python child, which keeps serving the window old code forever. `charta
+  stop` now kills the recorded pid's tree (taskkill /T), sweeps every port
+  Charta ever recorded (or configured) for orphans still listening — and
+  only ever kills a listener whose command line says charta. Each window
+  also prints which git revision and backend start time it is running from
+  (bottom of the Ask page, plus /api/version), so a stale window is visible
+  at a glance. Files: `charta/cli.py`, `charta/web/app.py`,
+  `tests/test_cli_stop.py`. Verified: `pytest -q` 221 passed; orphan sweep
+  tested against a real listener and a foreign listener left untouched.
+
 - 2026-10-21: **the server now forbids caching itself.** A stale app.js in
   the window was the recurring suspect for phantom failures, so every page
   and static file is now served with `Cache-Control: no-store` — Electron

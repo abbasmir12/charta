@@ -186,6 +186,21 @@ LOCAL_PROVIDERS = ("ollama", "lmstudio", "llamacpp", "vllm")
 # When this backend started — the Settings page shows it, so a window that is
 # running older code (a leftover instance) is obvious at a glance.
 _STARTED = datetime.datetime.now().isoformat(timespec="seconds")
+
+
+def _code_revision() -> str:
+    """The git revision this server is running from (best effort)."""
+    import subprocess
+
+    try:
+        out = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=10,
+                             cwd=str(pathlib.Path(__file__).resolve().parent.parent))
+        return out.stdout.strip() or "unknown"
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
 # A stamp the page can compare with the server: if they differ, the server was
 # updated while this window was open, and the page asks to be reloaded.
 BUILD = _STARTED
@@ -1074,7 +1089,8 @@ def ask_page(folder: str = "", q: str = "") -> str:
 <div class="row">{''.join(f'<span class="chip mono">{t["name"]}</span>' for t in TOOL_SPECS)}</div>
 <p class="muted">{TOOL_HINT}</p>
 <p style="margin-top:var(--s2)"><button type="button" class="chip" onclick="copyDiag()">Copy diagnostics</button>
-<span class="muted"> — if an answer never arrives, paste what that gives you.</span></p></section>"""
+<span class="muted"> — if an answer never arrives, paste what that gives you.</span>
+<span class="muted mono" style="margin-left:var(--s3)">code {_code_revision()} · backend started {_STARTED}</span></p></section>"""
     if q.strip():
         inner += (f'<script>window.addEventListener("load",()=>askFolder('
                   f'{q.strip()!r}));</script>')
@@ -1571,6 +1587,7 @@ def _ask_index(folder: str, cfg: AppConfig, client: LLMClient) -> tuple[list[dic
 def api_version() -> JSONResponse:
     """Which build the server is running (the page compares it with its own)."""
     return JSONResponse({"build": BUILD, "started": _STARTED,
+                         "revision": _code_revision(),
                          "version": "0.1.0"})
 
 

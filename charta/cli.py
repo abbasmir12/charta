@@ -413,41 +413,104 @@ def cmd_logs(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_stop(args: argparse.Namespace) -> int:
-    """Close the running Charta backend, cleanly and only that one.
+def _writing_charta(pids: list[int]) -> None:
+    """Nothing — placeholder kept for the POSIX sweep signature."""
+    return None
 
-    The pid comes from the session file. If the recorded port is still open,
-    that instance is stopped; if it is closed, the session was stale and is
-    only cleared — nothing else on the machine is ever touched.
+
+def _port_listeners(port: int) -> list[int]:
+    """Pids currently LISTENING on ``port`` (Windows: netstat, POSIX: lsof)."""
+    import os
+    import re
+    import subprocess
+
+    try:
+        if os.name == "nt":
+            out = subprocess.run(["netstat", "-ano"], capture_output=True,
+                                 text=True, timeout=30).stdout
+            pids = {int(m.group(1)) for m in re.finditer(
+                rf"^\s*TCP\s+\S*:{port}\s+\S+:\S+\s+LISTENING\s+(\d+)\s*$",
+                out, re.MULTILINE)}
+        else:
+            out = subprocess.run(["lsof", "-t", "-iTCP:" + str(port), "-sTCP:LISTEN"],
+                                 capture_output=True, text=True, timeout=30).stdout
+            pids = {int(x) for x in out.split()}
+        return sorted(pids)
+    except Exception:  # noqa: BLE001 — a missing netstat is not a failure
+        return []
+
+
+def _pid_command_line(pid: int) -> str:
+    """The command line of a pid, or an empty string if it is gone."""
+    import os
+    import subprocess
+
+    try:
+        if os.name == "nt":
+            out = subprocess.run(
+                ["wmic", "process", "where", f"processid={pid}",
+                 "get", "commandline", "/format:list"],
+                capture_output=True, text=True, timeout=30).stdout
+            for line in out.splitlines():
+                if line.startswith("CommandLine="):
+                    return line.partition("=")[2]
+        else:
+            return pathlib.Path(f"/proc/{pid}/cmdline").read_text(errors="ignore")
+    except Exception:  # noqa: BLE001
+        return ""
+    return ""
+
+
+def cmd_stop(args: argparse.Namespace) -> int:
+    """Close every Charta process for the recorded instance — the whole tree.
+
+    Restarting Charta used to leave an orphaned server behind: Electron spawns
+    its own Python backend, so killing the shell alone left the *old* backend
+    alive on the port, serving old code to new windows. So stop now kills the
+    recorded pid's whole tree and then sweeps the recorded port for anything
+    still listening — but only when its command line is unmistakably Charta's.
     """
     import os
     import signal
+    import subprocess
 
     from .core.applog import read_session, session_running, clear_session
 
     cfg = AppConfig.load()
-    if not session_running(cfg):
-        # The port is not answering: the instance is gone. Clear the stale
-        # session and never gamble on what the old pid belongs to now.
-        clear_session(cfg, "stale session")
-        print("Charta is not running (cleared the stale session if there was one).")
-        return 0
     session = read_session(cfg)
+    ports = {p for p in (session.get("port"), cfg.port)
+             if isinstance(p, int) and p > 0}
     pid = int(session.get("pid") or 0)
-    if pid <= 0 or pid == os.getpid():
-        clear_session(cfg, "stale session")
-        print("The session was stale — cleared it.")
-        return 0
-    try:
+    killed: list[str] = []
+
+    if session_running(cfg) and pid > 0 and pid != os.getpid():
+        killed.append(f"pid {pid} (tree)")
         if os.name == "nt":
-            os.system(f"taskkill /PID {pid} /F")
+            os.system(f"taskkill /PID {pid} /T /F")
         else:
             os.kill(pid, signal.SIGTERM)
-    except OSError as e:
-        print(f"Could not stop pid {pid}: {e}")
-        return 1
+
+    # Sweep every port Charta may have ever used for orphans still listening —
+    # only Charta's own command line is ever touched.
+    for port in sorted(ports):
+        for listener in _port_listeners(port):
+            if listener == os.getpid():
+                continue
+            cmdline = _pid_command_line(listener)
+            if "charta" not in cmdline.lower():
+                continue  # not ours — never touch it
+            killed.append(f"pid {listener} (listening on port {port})")
+            if os.name == "nt":
+                os.system(f"taskkill /PID {listener} /T /F")
+            else:
+                subprocess.run(["kill", str(listener)], capture_output=True)
+
     clear_session(cfg, "stopped")
-    print(f"Stopped Charta (pid {pid}). Start it again with: charta open .")
+    if killed:
+        print(f"Stopped Charta: {', '.join(killed)}.")
+        print("Start it again with: charta open .")
+    else:
+        print("Charta is not running.")
     return 0
 
 

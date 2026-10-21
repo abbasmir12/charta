@@ -59,7 +59,7 @@ pass and a recorded before/after demo.
   `charta/core/mover` call sites, `charta/core/config.py`, `config.toml`,
   `charta/web/app.py`, `charta/web/icons.py`, `charta/web/static/app.js`,
   `charta/cli.py`, `DESIGN.md`, `tests/test_history.py`, `tests/test_tools.py`,
-  `tests/test_web_ui.py`. Verified: `pytest -q` 186 passed; a demo folder's
+  `tests/test_web_ui.py`. Verified: `pytest -q` 185 passed; a demo folder's
   history, restore, edit and trash were exercised end to end.
 
 - 2026-10-21: **Folders dashboard + Files view + a registry that remembers.**

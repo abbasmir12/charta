@@ -120,7 +120,7 @@ def log(folder: str | pathlib.Path, limit: int = 40) -> list[Commit]:
     if not is_ready(root):
         return []
     out = _run(root, ["log", f"-{max(1, int(limit))}", "--name-only",
-                      "--pretty=format:%H%x1f%ad%x1f%s", "--date=short"])
+                      "--pretty=format:%x1e%H%x1f%ad%x1f%s", "--date=short"])
     if not out:
         return []
     commits: list[Commit] = []
@@ -132,12 +132,13 @@ def log(folder: str | pathlib.Path, limit: int = 40) -> list[Commit]:
         parts = head.split("\x1f")
         if len(parts) < 3:
             continue
+        names = [line.strip() for line in files.splitlines() if line.strip()]
         commits.append({
             "sha": parts[0].strip(),
             "date": parts[1].strip(),
             "message": parts[2].strip(),
-            "files": ", ".join(f.strip() for f in files.splitlines() if f.strip()),
-            "count": str(len([f for f in files.splitlines() if f.strip()])),
+            "files": ", ".join(names),
+            "count": str(len(names)),
         })
     return commits
 

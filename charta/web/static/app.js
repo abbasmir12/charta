@@ -64,7 +64,33 @@ window.undoLast=async()=>{await post('/api/undo?folder='+encodeURIComponent(fold
 window.startWatching=async()=>{await post('/api/watch?folder='+encodeURIComponent(folder()));location.reload();};
 window.stopWatching=async()=>{await post('/api/unwatch?folder='+encodeURIComponent(folder()));location.reload();};
 window.scanNow=async()=>{await post('/api/scan?folder='+encodeURIComponent(folder()));location.reload();};
-window.scanFolder=async(f)=>{await post('/api/scan?folder='+encodeURIComponent(f));location.reload();};
+window.scanFolder=async(f)=>{
+ const j=await post('/api/scan?folder='+encodeURIComponent(f));
+ await pollScan(j.job);
+ location.reload();
+};
+// Poll a running scan so a folder with hundreds of files shows its progress.
+async function pollScan(job){
+ if(!job)return;
+ const bar=document.getElementById('scanProgress');
+ while(true){
+  let s;
+  try{s=await api('/api/scan/status?job='+encodeURIComponent(job));}catch(e){return;}
+  if(s.state==='done'||s.state==='failed'){
+   if(bar)bar.innerHTML='';
+   if(s.state==='failed'&&bar)bar.innerHTML='<div class="banner warn">The scan stopped: '
+    +escHtml(s.error||'unknown error')+'</div>';
+   return;
+  }
+  if(bar){
+   const pct=s.total?Math.round((s.done/s.total)*100):0;
+   bar.innerHTML='<div class="card"><div class="row"><span class="mono">'+escHtml(s.current||'starting…')+'</span>'
+    +'<span class="spacer"></span><span class="chip">'+s.done+' / '+(s.total||'?')+'</span></div>'
+    +'<div class="conf"><span style="width:'+pct+'%"></span></div></div>';
+  }
+  await new Promise(r=>setTimeout(r,400));
+ }
+}
 window.watchFolder=async(f)=>{await post('/api/watch?folder='+encodeURIComponent(f));location.reload();};
 window.unwatchFolder=async(f)=>{await post('/api/unwatch?folder='+encodeURIComponent(f));location.reload();};
 // Ask a question about one specific folder from the Folders page.

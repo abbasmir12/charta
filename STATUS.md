@@ -41,6 +41,21 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **Bulk scans with progress, and a fix for two git races.**
+  `POST /api/scan` now runs in the background and reports progress
+  (`/api/scan/status`: done/total/current file), so a folder with hundreds of
+  files no longer freezes the UI — the Files and Folders pages show a progress
+  bar. Two history bugs found while testing and fixed: the exclude file that
+  keeps `.charta/` out of the index was written only when the repository was
+  created, so a folder that already had one started recording Charta's own
+  bookkeeping (and the first 12 files shown hid the real ones); and two
+  commits at once fought over git's index lock. Now the exclude file is
+  rewritten on every commit and each folder has one git lock. Settings gained
+  a "Folders" section showing where the watched-folder registry lives.
+  Files: `charta/core/history.py`, `charta/core/watchd.py`, `charta/web/app.py`,
+  `charta/web/static/app.js`, `README.md`, `tests/test_history.py`,
+  `tests/test_web_ui.py`. Verified: `pytest -q` 186 passed.
+
 - 2026-10-21: **Git-style history + file tools.** Every watched folder can carry
   a private git repository at `.charta/git` (work tree = the folder, `.charta/`
   excluded from the index): Charta commits after it indexes files, moves one,

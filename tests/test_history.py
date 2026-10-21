@@ -83,3 +83,21 @@ def test_history_can_be_switched_off(tmp_path):
     (folder / "a.txt").write_text("a", encoding="utf-8")
     assert record.record(cfg, folder, "charta: nope") is None
     assert not history.is_ready(folder)
+
+
+def test_two_commits_at_once_do_not_corrupt_the_history(tmp_path):
+    """The daemon and a manual scan can commit at the same time."""
+    import threading
+
+    folder = tmp_path / "receipts"
+    folder.mkdir()
+    (folder / "a.txt").write_text("a", encoding="utf-8")
+    threads = [threading.Thread(target=history.commit, args=(folder, f"charta: commit {i}"))
+               for i in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    commits = history.log(folder)
+    assert commits
+    assert all(".charta" not in c["files"] for c in commits)

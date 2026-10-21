@@ -22,9 +22,15 @@ import os
 import pathlib
 import shutil
 import subprocess
+import threading
 
 GIT_DIR_NAME = "git"
 EXCLUDES = (".charta/\n", ".git/\n", "Thumbs.db\n", "desktop.ini\n", ".DS_Store\n")
+
+# One git operation at a time per folder: two commits at once would fight over
+# the index lock and could record a half-written tree.
+_LOCKS: dict[str, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
 
 # One history entry: when, what, and which files it touched.
 Commit = dict[str, str]
@@ -69,6 +75,16 @@ def _run(folder: str | pathlib.Path, args: list[str], timeout: float = 60.0) -> 
     return proc.stdout
 
 
+def _lock_for(folder: pathlib.Path) -> threading.Lock:
+    """One lock per folder, so two commits never race over git's index."""
+    key = str(folder)
+    with _LOCKS_GUARD:
+        lock = _LOCKS.get(key)
+        if lock is None:
+            lock = _LOCKS[key] = threading.RLock()
+        return lock
+
+
 def ensure(folder: str | pathlib.Path) -> bool:
     """Create the private repository if needed. True when history is available."""
     if not available():
@@ -76,22 +92,29 @@ def ensure(folder: str | pathlib.Path) -> bool:
     root = pathlib.Path(folder)
     if not root.exists():
         return False
-    gd = git_dir(root)
-    if not (gd / "HEAD").exists():
-        gd.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            subprocess.run(["git", "init", "--bare", "--quiet", str(gd)],
-                           capture_output=True, text=True, timeout=60, check=False)
-        except (OSError, subprocess.SubprocessError):
-            return False
+    with _lock_for(root):
+        gd = git_dir(root)
         if not (gd / "HEAD").exists():
-            return False
-        _run(root, ["config", "core.bare", "false"])
-        _run(root, ["config", "core.worktree", str(root)])
-        _run(root, ["config", "core.logAllRefUpdates", "true"])
+            gd.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                subprocess.run(["git", "init", "--bare", "--quiet", str(gd)],
+                               capture_output=True, text=True, timeout=60, check=False)
+            except (OSError, subprocess.SubprocessError):
+                return False
+            if not (gd / "HEAD").exists():
+                return False
+            _run(root, ["config", "core.bare", "false"])
+            _run(root, ["config", "core.worktree", str(root)])
+            _run(root, ["config", "core.logAllRefUpdates", "true"])
+        # The exclude file is what keeps Charta's own bookkeeping (and the git
+        # directory itself) out of the history. Written every time, so a folder
+        # that predates it is fixed on the next commit.
         info = gd / "info"
         info.mkdir(parents=True, exist_ok=True)
-        (info / "exclude").write_text("".join(EXCLUDES), encoding="utf-8")
+        exclude = info / "exclude"
+        wanted = "".join(EXCLUDES)
+        if not exclude.exists() or exclude.read_text(encoding="utf-8") != wanted:
+            exclude.write_text(wanted, encoding="utf-8")
     return True
 
 
@@ -105,13 +128,14 @@ def commit(folder: str | pathlib.Path, message: str) -> str | None:
     root = pathlib.Path(folder)
     if not ensure(root):
         return None
-    if _run(root, ["add", "-A", "."]) is None:
-        return None
-    out = _run(root, ["commit", "-m", message, "--quiet"])
-    if out is None:
-        return None  # nothing changed (or git refused) — that is not an error
-    sha = _run(root, ["rev-parse", "HEAD"])
-    return sha.strip() if sha else None
+    with _lock_for(root):
+        if _run(root, ["add", "-A", "."]) is None:
+            return None
+        out = _run(root, ["commit", "-m", message, "--quiet"])
+        if out is None:
+            return None  # nothing changed (or git refused) — that is not an error
+        sha = _run(root, ["rev-parse", "HEAD"])
+        return sha.strip() if sha else None
 
 
 def log(folder: str | pathlib.Path, limit: int = 40) -> list[Commit]:

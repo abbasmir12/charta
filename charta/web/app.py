@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import pathlib
 import threading
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -59,6 +60,9 @@ THINKING: dict[str, str] = {"msg": "Idle. Watching nothing yet."}
 
 _daemon: WatchDaemon | None = None
 _daemon_lock = threading.Lock()
+# Background scan jobs: id -> progress. Kept small (the last few jobs).
+_scan_jobs: dict[str, dict] = {}
+_scan_lock = threading.Lock()
 
 
 def _daemon_get() -> WatchDaemon:
@@ -480,6 +484,7 @@ def folders_page(folder: str = "") -> str:
             f'<div class="stack">{"".join(paused)}</div></section>')
     inner = f"""{page_head("Folders", sub, f'<a class="btn btn-primary" href="/">'
                                 f'<span class="icon">{icon("folder-add", 16)}</span> Add a folder</a>')}
+<div id="scanProgress"></div>
 {''.join(sections) if entries else body}"""
     return shell("folders", folder, inner)
 
@@ -563,6 +568,7 @@ def files_page(folder: str = "") -> str:
     inner = f"""{page_head("Files", "Every file Charta has seen in this folder, and what it thinks of it.",
                           f'<button type="button" class="btn" onclick="scanFolder({folder!r})">'
                           f'<span class="icon">{icon("scan", 16)}</span> Scan now</button>')}
+<div id="scanProgress"></div>
 <div class="card">{table}</div>
 <div id="reader"></div>
 {trash_section}"""
@@ -888,6 +894,16 @@ def settings(folder: str = "", req: Request = None) -> str:  # type: ignore[assi
 <dt>Cloud option</dt><dd>ElevenLabs <span class="badge-sensitive">audio leaves your device</span>, off by default</dd>
 </dl></section>
 <section class="section"><div class="section-head">
+<h2 class="section-title"><span class="icon">{icon("folders", 16)}</span> Folders</h2>
+<span class="chip">{len(watchlist.folders(cfg))} watched</span></div>
+<dl class="facts">
+<dt>Watched folders</dt><dd class="mono">{watchlist.registry_path(cfg)}</dd>
+<dt>Known folders</dt><dd>{len(watchlist.known(cfg))} ({len(watchlist.folders(cfg))} being watched)</dd>
+<dt>History</dt><dd>{'on — a private git history in each folder' if cfg.history and history.available() else 'off'}</dd>
+</dl>
+<p class="muted">This file remembers every folder you have set up, so Charta picks up where it left off
+the next time you open it. Paused folders keep their analysis.</p></section>
+<section class="section"><div class="section-head">
 <h2 class="section-title"><span class="icon">{icon("info", 16)}</span> Window</h2>
 <span class="chip">{shell_kind}</span></div>
 <dl class="facts">
@@ -1004,17 +1020,54 @@ def api_unwatch(folder: str) -> JSONResponse:
 
 @app.post("/api/scan")
 def api_scan(folder: str) -> JSONResponse:
-    """Scan a folder's existing files now (used by the 'Scan now' button)."""
+    """Scan a folder's existing files now (used by the 'Scan now' button).
+
+    The scan runs in the background so a folder with hundreds of files does not
+    freeze the UI; the job id can be polled at ``/api/scan/status``.
+    """
     bad = _guard(folder)
     if bad:
         return bad
     cfg = _cfg()
     client = LLMClient(cfg)
+    job = str(uuid.uuid4())
+    with _scan_lock:
+        _scan_jobs[job] = {"folder": folder, "done": 0, "total": 0, "current": "",
+                           "state": "starting"}
+    thread = threading.Thread(target=_run_scan, args=(job, folder, client), daemon=True)
+    thread.start()
+    return JSONResponse({"job": job, "scanned": 0, "tracked": len(prop_store.load_proposals(folder))})
+
+
+def _run_scan(job: str, folder: str, client: LLMClient) -> None:
+    """Background scan with progress the page can poll."""
+    cfg = _cfg()
+
+    def progress(done: int, total: int, current: str) -> None:
+        with _scan_lock:
+            _scan_jobs[job].update({"done": done, "total": total, "current": current,
+                                     "state": "scanning"})
+
     try:
-        scanned = scan_folder(folder, client, _vision(cfg, client))
-    except Exception as e:  # noqa: BLE001 - report, never 500 the UI
-        return JSONResponse({"error": str(e)}, status_code=200)
-    return JSONResponse({"scanned": scanned, "tracked": len(prop_store.load_proposals(folder))})
+        scanned = scan_folder(folder, client, _vision(cfg, client), progress)
+        with _scan_lock:
+            _scan_jobs[job].update({"done": _scan_jobs[job].get("total", scanned),
+                                    "state": "done", "scanned": scanned})
+    except Exception as e:  # noqa: BLE001 - report, never crash the server
+        with _scan_lock:
+            _scan_jobs[job].update({"state": "failed", "error": str(e)})
+    watchlist.mark_scanned(cfg, folder)
+
+
+@app.get("/api/scan/status")
+def api_scan_status(job: str = "") -> JSONResponse:
+    """Progress of a running scan."""
+    with _scan_lock:
+        job_state = dict(_scan_jobs.get(job, {}))
+    if not job_state:
+        return JSONResponse({"error": "unknown-job"}, status_code=404)
+    job_state["tracked"] = len(prop_store.load_proposals(job_state.get("folder", "")))
+    return JSONResponse(job_state)
 
 
 OUTPUT_FILES = {"receipts": "receipts.csv", "study": "notes.md",

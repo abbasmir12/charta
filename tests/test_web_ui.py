@@ -9,12 +9,23 @@ from charta.web.app import app
 
 
 @pytest.fixture
-def client(monkeypatch, tmp_path):
+def client(monkeypatch):
     # Point the provider at a closed port: AI calls fail fast and fall back.
+    # The state dir (watched-folder registry) is set by the autouse fixture.
     monkeypatch.setenv("CHARTA_BASE_URL", "http://127.0.0.1:9/v1")
-    # Keep the watched-folder registry inside the test's temp dir.
-    monkeypatch.setenv("CHARTA_STATE_DIR", str(tmp_path / "state"))
     return TestClient(app)
+
+def _wait_scan(client, job: str, timeout: float = 20.0) -> dict:
+    """Wait for a background scan to finish (the UI polls the same way)."""
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        state = client.get("/api/scan/status", params={"job": job}).json()
+        if state.get("state") in ("done", "failed"):
+            return state
+        time.sleep(0.05)
+    raise AssertionError("the scan did not finish in time")
 
 
 def test_health_never_waits_on_the_provider(client, monkeypatch):
@@ -111,7 +122,10 @@ def test_scan_endpoint_proposes_existing_files(client, tmp_path):
     save_charter(tmp_path, preset_charter("student"))
     (tmp_path / "lecture_07.txt").write_text("lecture 7", encoding="utf-8")
     body = client.post("/api/scan", params={"folder": str(tmp_path)}).json()
-    assert body["scanned"] == 1 and body["tracked"] == 1
+    assert body["job"]
+    done = _wait_scan(client, body["job"])
+    assert done["state"] == "done" and done["scanned"] == 1
+    assert done["tracked"] == 1
 
 
 def test_watch_is_refused_for_protected_folders(client):
@@ -153,7 +167,8 @@ def test_unwatching_keeps_the_folder_and_its_analysis(client, tmp_path):
     save_charter(tmp_path, preset_charter("student"))
     (tmp_path / "lecture_07.txt").write_text("lecture 7", encoding="utf-8")
     client.post("/api/watch", params={"folder": str(tmp_path)})
-    client.post("/api/scan", params={"folder": str(tmp_path)})
+    job = client.post("/api/scan", params={"folder": str(tmp_path)}).json()["job"]
+    _wait_scan(client, job)
     client.post("/api/unwatch", params={"folder": str(tmp_path)})
 
     text = client.get("/folders").text
@@ -189,7 +204,8 @@ def test_history_page_lists_the_commits_charta_made(client, tmp_path):
     save_charter(tmp_path, preset_charter("student"))
     (tmp_path / "lecture_07.txt").write_text("lecture 7", encoding="utf-8")
     client.post("/api/watch", params={"folder": str(tmp_path)})
-    client.post("/api/scan", params={"folder": str(tmp_path)})
+    job = client.post("/api/scan", params={"folder": str(tmp_path)}).json()["job"]
+    _wait_scan(client, job)
     text = client.get("/history", params={"folder": str(tmp_path)}).text
     assert "charta: indexed" in text
     assert "lecture_07.txt" in text
@@ -201,7 +217,8 @@ def test_folders_page_shows_the_history_count(client, tmp_path):
     save_charter(tmp_path, preset_charter("student"))
     (tmp_path / "lecture_07.txt").write_text("lecture 7", encoding="utf-8")
     client.post("/api/watch", params={"folder": str(tmp_path)})
-    client.post("/api/scan", params={"folder": str(tmp_path)})
+    job = client.post("/api/scan", params={"folder": str(tmp_path)}).json()["job"]
+    _wait_scan(client, job)
     text = client.get("/folders").text
     assert "commits</a>" in text
 
@@ -235,3 +252,4 @@ def test_file_tools_refuse_to_write_outside_the_folder(client, tmp_path):
                       json={"path": "../escaped.md", "text": "nope"})
     assert res.status_code == 400
     assert res.json()["error"] == "tool-error"
+

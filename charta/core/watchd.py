@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pathlib
 import threading
+from typing import Callable
 
 from . import record
 from . import watchlist
@@ -25,21 +26,26 @@ SCAN_STABLE_SECONDS = 0.2
 
 
 def scan_folder(folder: str | pathlib.Path, client: LLMClient | None = None,
-                vision: object | None = None) -> int:
+                vision: object | None = None,
+                progress: Callable[[int, int, str], None] | None = None) -> int:
     """One-shot pass over a folder's existing files; returns files proposed.
 
     Runs through the same safety path as the live watcher (protected paths,
     suggest vs auto mode, sensitive detection), so a scan never surprises you.
+    ``progress`` is called with (done, total, current file) as the scan runs.
     """
     root = pathlib.Path(folder)
     charter = load_charter(root)
     if charter is None:
         return 0
+    files = [p for p in sorted(root.rglob("*"))
+             if p.is_file() and not any(part in EXCLUDED_PARTS for part in p.parts)]
+    total = len(files)
     count = 0
     proposals = 0
-    for p in sorted(root.rglob("*")):
-        if not p.is_file() or any(part in EXCLUDED_PARTS for part in p.parts):
-            continue
+    for i, p in enumerate(files, start=1):
+        if progress:
+            progress(i - 1, total, str(p.relative_to(root)))
         if not wait_stable(p, SCAN_STABLE_SECONDS):
             continue
         result = process_new_file(root, p, charter, client,
@@ -47,6 +53,8 @@ def scan_folder(folder: str | pathlib.Path, client: LLMClient | None = None,
         count += 1
         if result.proposal.status == "pending":
             proposals += 1
+        if progress:
+            progress(i, total, str(p.relative_to(root)))
     record.record_index(None, root, count, proposals)
     return count
 

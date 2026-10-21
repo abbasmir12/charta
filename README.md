@@ -167,6 +167,16 @@ for `/api/health`, and everything else goes through the same guarded core.
 - Approve/reject, mover (dry-run, `(2)`-suffix collisions), journal + undo
 - Receipts xlsx+csv, study notes+flashcards, data-entry table
 - Gap detection, ask-with-citations (refuses to invent), sensitive-file guard
+- **Folders dashboard**: every folder Charta knows, how many are watched, what is
+  in each one, an ask box per folder, and pause/resume that keeps the analysis
+- **Files view**: every file with its index state and reason, a reader (text,
+  PDF, DOCX, vision summary), in-place editing that keeps the old version, and
+  "Move to trash" (reversible — nothing is ever deleted)
+- **Git history per folder**: a private repo in `.charta/git` records every
+  index, move, edit and rebuild with a readable message; `git log` works in
+  your own terminal, and an old version of a file can be restored with a click
+- **Bulk scans with progress**: scanning a folder with hundreds of files runs in
+  the background and shows what it is working on
 - Web UI (setup/overview/review/outputs/gaps/ask/activity/settings/styleguide), SSE live strip, voice hook (Web Speech in browser, faster-whisper in CLI)
 - Native window with dark title bar, Mica + solid fallback, taskbar icon/grouping, tray, remembered geometry, custom dropdowns and folder picker (see *Native-feel polish*), plus the Electron desktop shell
 - **Design system with tests**: WCAG-AA-checked palette (both themes), 4px spacing scale, 7-step type scale, and every `var(--token)` proven defined — `tests/test_design.py`

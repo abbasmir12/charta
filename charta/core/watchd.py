@@ -10,6 +10,7 @@ from __future__ import annotations
 import pathlib
 import threading
 
+from . import record
 from . import watchlist
 from .charter import load_charter
 from .config import AppConfig
@@ -35,14 +36,18 @@ def scan_folder(folder: str | pathlib.Path, client: LLMClient | None = None,
     if charter is None:
         return 0
     count = 0
+    proposals = 0
     for p in sorted(root.rglob("*")):
         if not p.is_file() or any(part in EXCLUDED_PARTS for part in p.parts):
             continue
         if not wait_stable(p, SCAN_STABLE_SECONDS):
             continue
-        process_new_file(root, p, charter, client,
-                         auto_apply=(charter.mode == "auto"), vision=vision)  # type: ignore[arg-type]
+        result = process_new_file(root, p, charter, client,
+                                  auto_apply=(charter.mode == "auto"), vision=vision)  # type: ignore[arg-type]
         count += 1
+        if result.proposal.status == "pending":
+            proposals += 1
+    record.record_index(None, root, count, proposals)
     return count
 
 

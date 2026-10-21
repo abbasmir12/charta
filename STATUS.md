@@ -41,6 +41,27 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **Git-style history + file tools.** Every watched folder can carry
+  a private git repository at `.charta/git` (work tree = the folder, `.charta/`
+  excluded from the index): Charta commits after it indexes files, moves one,
+  edits one, trashes one, rebuilds outputs or undoes a move, with a readable
+  message ("charta: moved receipts/scan.pdf → Invoices/invoice.pdf — moved
+  because it is an electricity bill dated March 2026"). New `/history` page
+  lists the trail (date, short sha, message, files touched); an old version of
+  a file can be restored with one click — a restore is a copy, and the current
+  file is kept as `<name>.charta-old`. New file tools (`charta/core/tools.py`):
+  read (text, PDF, DOCX, vision summary), edit in place (old version kept), and
+  "Move to trash" into `.charta/trash/` with "Bring back" — nothing is ever
+  deleted, per the safety rules. History is on by default (`[app] history`,
+  `CHARTA_HISTORY=0` to disable) and needs git on PATH; without git Charta
+  works exactly as before. Files: `charta/core/history.py`,
+  `charta/core/record.py`, `charta/core/tools.py`, `charta/core/watchd.py`,
+  `charta/core/mover` call sites, `charta/core/config.py`, `config.toml`,
+  `charta/web/app.py`, `charta/web/icons.py`, `charta/web/static/app.js`,
+  `charta/cli.py`, `DESIGN.md`, `tests/test_history.py`, `tests/test_tools.py`,
+  `tests/test_web_ui.py`. Verified: `pytest -q` 186 passed; a demo folder's
+  history, restore, edit and trash were exercised end to end.
+
 - 2026-10-21: **Folders dashboard + Files view + a registry that remembers.**
   New `/folders` page lists every folder Charta knows: how many are watched,
   each folder's purpose, mode, files/indexed/pending/gaps/moves, watching-since

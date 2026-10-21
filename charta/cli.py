@@ -9,6 +9,7 @@ import sys
 from .core import journal as journal_mod
 from .core import mover as mover_mod
 from .core import proposals as prop_store
+from .core import record
 from .core import watchlist as watchlist_mod
 from .core.ask import answer_query, build_index
 from .core.charter import (create_charter_from_text, load_charter, preset_charter,
@@ -160,16 +161,19 @@ def cmd_approve(args: argparse.Namespace) -> int:
     if not targets:
         print("Nothing to approve.")
         return 0
+    moves: list[tuple[str, str, str]] = []
     for p in targets:
         try:
             r = mover_mod.apply_proposal(folder, p, dry_run=args.dry_run)
             print(f"{'[dry-run] would move' if args.dry_run else 'moved'}: {r.src} → {r.dst} ({r.reason})")
             if not args.dry_run:
                 p.status = "approved"
+                moves.append((r.src, r.dst, r.reason))
         except Exception as e:  # noqa: BLE001
             print(f"FAILED {p.source}: {e}")
     if not args.dry_run:
         prop_store.save_proposals(folder, props)
+        record.record_moves(AppConfig.load(), folder, moves)
         # refresh outputs
         build_receipts(folder)
     return 0
@@ -178,6 +182,8 @@ def cmd_approve(args: argparse.Namespace) -> int:
 def cmd_undo(args: argparse.Namespace) -> int:
     e = journal_mod.undo_last(args.folder, dry_run=args.dry_run)
     print(f"{'[dry-run] would undo' if args.dry_run else 'undone'}: {e}" if e else "Journal empty.")
+    if e and not args.dry_run:
+        record.record_undo(AppConfig.load(), args.folder, e.get("src", ""), e.get("dst", ""))
     return 0
 
 

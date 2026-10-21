@@ -61,6 +61,7 @@ class AppConfig:
     stable_seconds: float = 2.0
     mode: str = "suggest"
     exclude_sensitive: bool = True
+    history: bool = True  # keep a private git history per watched folder
     voice_provider: str = "local"
     whisper_model: str = "small"
 
@@ -115,6 +116,8 @@ class AppConfig:
             stable_seconds=float(watcher.get("stable_seconds", 2.0)),
             mode=str(safety.get("mode", "suggest")),
             exclude_sensitive=bool(safety.get("exclude_sensitive_from_index", True)),
+            history=(os.environ.get("CHARTA_HISTORY", "") not in ("", "0", "false"))
+            and bool(app.get("history", True)),
             voice_provider=str(voice.get("provider", "local")),
             whisper_model=str(voice.get("whisper_model", "small")),
         )

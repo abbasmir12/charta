@@ -97,6 +97,50 @@ window.readFile=async(f,rel)=>{
   holder.innerHTML='<div class="card"><p class="muted">Could not read that file.</p></div>';
  }
 };
+// Edit a text file in place. The old version is kept as <name>.charta-old.
+window.editFile=async(f,rel)=>{
+ const holder=document.getElementById('reader');
+ if(!holder)return;
+ holder.innerHTML='<div class="card"><div class="skel" style="height:60px">loading…</div></div>';
+ let text='';
+ try{
+  const j=await api('/api/file/read?folder='+encodeURIComponent(f)+'&path='+encodeURIComponent(rel));
+  text=j.text||'';
+ }catch(err){text='';}
+ holder.innerHTML='<div class="card fadein"><div class="card-head"><h3 class="mono">'
+  +escHtml(rel)+'</h3><span class="chip">editing — the old version is kept</span></div>'
+  +'<textarea id="editArea" rows="14" style="width:100%">'+escHtml(text)+'</textarea>'
+  +'<div class="row"><button type="button" class="btn btn-primary" onclick="saveFile('
+  +JSON.stringify(f)+','+JSON.stringify(rel)+')">Save</button>'
+  +'<button type="button" class="btn" onclick="readFile('+JSON.stringify(f)+','+JSON.stringify(rel)+')">Cancel</button>'
+  +'</div></div>';
+};
+window.saveFile=async(f,rel)=>{
+ const area=document.getElementById('editArea');
+ const holder=document.getElementById('reader');
+ try{
+  const j=await post('/api/file/write?folder='+encodeURIComponent(f),{path:rel,text:area?area.value:''});
+  toast('Saved '+rel+(j.backup?' (old version kept as '+j.backup+')':''));
+  location.reload();
+ }catch(err){
+  if(holder)holder.innerHTML='<div class="card"><p class="muted">Could not save that file.</p></div>';
+ }
+};
+// "Delete" means move aside: the file stays in .charta/trash and can come back.
+window.trashFile=async(f,rel)=>{
+ try{
+  const j=await post('/api/file/trash?folder='+encodeURIComponent(f),{path:rel});
+  toast('Moved '+rel+' to Charta\'s trash (not deleted)');
+  location.reload();
+ }catch(err){toast('Could not move that file to the trash.',false);}
+};
+window.restoreFile=async(f,rel)=>{
+ try{
+  await post('/api/file/restore?folder='+encodeURIComponent(f),{path:rel});
+  toast('Brought back from the trash');
+  location.reload();
+ }catch(err){toast('Could not bring that file back.',false);}
+};
 window.approveOne=async(src)=>{await post('/api/approve?folder='+encodeURIComponent(folder()),{files:[src]});
  const card=document.querySelector('.prop-card');if(card)card.style.opacity='0.4';toast('Approved '+src,true);};
 window.rejectOne=async(src)=>{await post('/api/reject?folder='+encodeURIComponent(folder()),{files:[src]});location.reload();};

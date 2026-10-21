@@ -181,3 +181,57 @@ def test_file_read_refuses_paths_outside_the_folder(client, tmp_path):
                                                 "path": "../secret.txt"})
     assert res.status_code == 400
     assert res.json()["error"] == "outside-folder"
+
+
+def test_history_page_lists_the_commits_charta_made(client, tmp_path):
+    from charta.core.charter import preset_charter, save_charter
+
+    save_charter(tmp_path, preset_charter("student"))
+    (tmp_path / "lecture_07.txt").write_text("lecture 7", encoding="utf-8")
+    client.post("/api/watch", params={"folder": str(tmp_path)})
+    client.post("/api/scan", params={"folder": str(tmp_path)})
+    text = client.get("/history", params={"folder": str(tmp_path)}).text
+    assert "charta: indexed" in text
+    assert "lecture_07.txt" in text
+
+
+def test_folders_page_shows_the_history_count(client, tmp_path):
+    from charta.core.charter import preset_charter, save_charter
+
+    save_charter(tmp_path, preset_charter("student"))
+    (tmp_path / "lecture_07.txt").write_text("lecture 7", encoding="utf-8")
+    client.post("/api/watch", params={"folder": str(tmp_path)})
+    client.post("/api/scan", params={"folder": str(tmp_path)})
+    text = client.get("/folders").text
+    assert "commits</a>" in text
+
+
+def test_editing_a_file_keeps_the_old_version(client, tmp_path):
+    (tmp_path / "notes.md").write_text("first", encoding="utf-8")
+    res = client.post("/api/file/write", params={"folder": str(tmp_path)},
+                      json={"path": "notes.md", "text": "second"})
+    assert res.status_code == 200
+    assert res.json()["backup"] == "notes.md.charta-old"
+    assert (tmp_path / "notes.md").read_text(encoding="utf-8") == "second"
+    assert (tmp_path / "notes.md.charta-old").read_text(encoding="utf-8") == "first"
+
+
+def test_trashing_a_file_moves_it_and_it_can_come_back(client, tmp_path):
+    (tmp_path / "old.txt").write_text("keep", encoding="utf-8")
+    res = client.post("/api/file/trash", params={"folder": str(tmp_path)},
+                      json={"path": "old.txt"})
+    assert res.status_code == 200
+    assert not (tmp_path / "old.txt").exists()
+    listed = client.get("/api/file/trash", params={"folder": str(tmp_path)}).json()["items"]
+    assert listed and listed[0]["was"] == "old.txt"
+    back = client.post("/api/file/restore", params={"folder": str(tmp_path)},
+                       json={"path": listed[0]["path"]})
+    assert back.status_code == 200
+    assert (tmp_path / "old.txt").read_text(encoding="utf-8") == "keep"
+
+
+def test_file_tools_refuse_to_write_outside_the_folder(client, tmp_path):
+    res = client.post("/api/file/write", params={"folder": str(tmp_path)},
+                      json={"path": "../escaped.md", "text": "nope"})
+    assert res.status_code == 400
+    assert res.json()["error"] == "tool-error"

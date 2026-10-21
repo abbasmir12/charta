@@ -16,9 +16,12 @@ from fastapi.staticfiles import StaticFiles
 from . import icons
 from ..core import applog
 from ..core import fsbrowse
+from ..core import history
 from ..core import journal as journal_mod
 from ..core import mover as mover_mod
 from ..core import proposals as prop_store
+from ..core import record
+from ..core import tools
 from ..core import watchlist
 from ..core.ask import answer_query, build_index
 from ..core.charter import create_charter_from_text, load_charter, save_charter
@@ -143,13 +146,14 @@ def folder_picker_html() -> str:
 
 
 NAV_ITEMS = ["folders", "overview", "files", "review", "outputs", "gaps", "ask",
-             "activity", "settings"]
+             "activity", "history", "settings"]
 NAV_LABELS = {"folders": "Folders", "overview": "Overview", "files": "Files",
               "review": "Review", "outputs": "Outputs",
-              "gaps": "Gaps", "ask": "Ask", "activity": "Activity", "settings": "Settings"}
+              "gaps": "Gaps", "ask": "Ask", "activity": "Activity",
+              "history": "History", "settings": "Settings"}
 # Grouped navigation: high-frequency work first, records second, settings in the foot.
 NAV_GROUPS = [("Work", ["folders", "overview", "files", "review", "outputs", "gaps", "ask"]),
-              ("Records", ["activity"])]
+              ("Records", ["activity", "history"])]
 LOCAL_PROVIDERS = ("ollama", "lmstudio", "llamacpp", "vllm")
 
 
@@ -419,6 +423,11 @@ def folders_page(folder: str = "") -> str:
             f'<button type="button" class="btn" onclick="scanFolder({f!r})">'
             f'<span class="icon">{icon("scan", 16)}</span> Scan now</button>',
         ]
+        hist = history.summary(f)
+        if hist.get("state") == "ready":
+            actions.append(f'<a class="btn btn-ghost" href="/history?folder={quote(f)}">'
+                           f'<span class="icon">{icon("history", 16)}</span> '
+                           f'{escape_attr(hist.get("commits", "0"))} commits</a>')
         if is_watching:
             actions.append(f'<button type="button" class="btn btn-ghost" '
                            f'onclick="unwatchFolder({f!r})">Stop watching</button>')
@@ -519,10 +528,14 @@ def files_page(folder: str = "") -> str:
         size = path.stat().st_size
         kind = path.suffix.lstrip(".").lower() or "file"
         rows.append(
-            f'<tr><td class="mono">{rel}</td><td>{kind}</td><td>{size:,} B</td>'
-            f'<td>{status}</td><td class="muted">{prop.reason if prop else ""} {badge}</td>'
-            f'<td><button type="button" class="btn btn-ghost" '
-            f'onclick="readFile({folder!r}, {rel!r})">Read</button></td></tr>')
+            f'<tr><td class="mono">{escape_attr(rel)}</td><td>{kind}</td><td>{size:,} B</td>'
+            f'<td>{status}</td><td class="muted">{escape_attr(prop.reason) if prop else ""} {badge}</td>'
+            f'<td class="row"><button type="button" class="btn btn-ghost" '
+            f'onclick="readFile({folder!r}, {rel!r})">Read</button>'
+            f'<button type="button" class="btn btn-ghost" '
+            f'onclick="editFile({folder!r}, {rel!r})">Edit</button>'
+            f'<button type="button" class="btn btn-ghost" '
+            f'onclick="trashFile({folder!r}, {rel!r})">Move to trash</button></td></tr>')
     if rows:
         table = (f'<table class="grid"><thead><tr><th>File</th><th>Kind</th><th>Size</th>'
                  f'<th>Index state</th><th>Why</th><th></th></tr></thead>'
@@ -532,12 +545,144 @@ def files_page(folder: str = "") -> str:
                             "Drop files into this folder and Charta will index them.",
                             f'<button type="button" class="btn" onclick="scanFolder({folder!r})">'
                             f'<span class="icon">{icon("scan", 16)}</span> Scan now</button>')
+    trashed = tools.trash_listing(folder)
+    if trashed:
+        trash_rows = "".join(
+            f'<div class="row-item"><div class="row"><span class="mono">{escape_attr(t["path"])}</span>'
+            f'<span class="spacer"></span>'
+            f'<button type="button" class="btn btn-ghost" '
+            f'onclick="restoreFile({folder!r}, {t["path"]!r})">Bring back</button></div>'
+            f'<p class="muted">Was {escape_attr(t["was"] or "unknown")} — nothing is ever deleted.</p></div>'
+            for t in trashed)
+        trash_section = ('<section class="section"><div class="section-head">'
+                         '<h2 class="section-title">In Charta\'s trash</h2>'
+                         '<span class="section-note">Moved aside, never deleted. Bring any of them back.</span>'
+                         f'</div><div class="card"><div class="log">{trash_rows}</div></div></section>')
+    else:
+        trash_section = ""
     inner = f"""{page_head("Files", "Every file Charta has seen in this folder, and what it thinks of it.",
                           f'<button type="button" class="btn" onclick="scanFolder({folder!r})">'
                           f'<span class="icon">{icon("scan", 16)}</span> Scan now</button>')}
 <div class="card">{table}</div>
-<div id="reader"></div>"""
+<div id="reader"></div>
+{trash_section}"""
     return shell("files", folder, inner, mode)
+
+
+@app.get("/history", response_class=HTMLResponse)
+def history_page(folder: str = "") -> str:
+    """The folder's private history: what Charta changed, when, and why."""
+    if not folder:
+        return shell("history", folder, empty_state(
+            "history", "No folder selected",
+            "Pick a watched folder to see its history.", ""))
+    _, mode = _page(folder, "history")
+    commits = history.log(folder, 60)
+    if not history.available():
+        body = empty_state("history", "No git on this machine",
+                           "Charta keeps a private history of every folder it changes. "
+                           "Install git and scan the folder to start one.")
+    elif not commits:
+        body = empty_state("history", "No history yet",
+                           "Charta records every index, move and rebuild here — "
+                           "scan the folder to start the trail.",
+                           f'<button type="button" class="btn" onclick="scanFolder({folder!r})">'
+                           f'<span class="icon">{icon("scan", 16)}</span> Scan now</button>')
+    else:
+        rows = []
+        for c in commits:
+            files = c.get("files", "")
+            listed = "".join(
+                f'<li class="mono"><span>{escape_attr(f)}</span></li>'
+                for f in [x.strip() for x in files.split(",") if x.strip()][:12])
+            rows.append(
+                f'<div class="row-item"><div class="row">'
+                f'<span class="mono muted">{c["date"]}</span>'
+                f'<span class="mono">{c["sha"][:8]}</span>'
+                f'<span class="spacer"></span>'
+                f'<span class="chip">{c.get("count", "0")} file(s)</span></div>'
+                f'<p>{escape_attr(c["message"])}</p>'
+                f'<ul class="muted" style="margin:var(--s2) 0 0;padding-left:var(--s5)">{listed}</ul>'
+                f'</div>')
+        body = f'<div class="card"><div class="log">{"".join(rows)}</div></div>'
+    inner = f"""{page_head("History", "Charta's own record of this folder — a private git history in .charta/git.")}
+{body}"""
+    return shell("history", folder, inner, mode)
+
+
+@app.post("/api/history/restore")
+def api_history_restore(folder: str, sha: str, path: str) -> JSONResponse:
+    """Put an old version of one file back (a copy — the current file is kept)."""
+    bad = _guard(folder)
+    if bad:
+        return bad
+    root = pathlib.Path(folder).resolve()
+    target = (root / path).resolve()
+    if not str(target).startswith(str(root)) or ".charta" in target.parts:
+        return JSONResponse({"error": "outside-folder",
+                              "message": "Charta only restores files inside the folder."},
+                             status_code=400)
+    restored = history.restore_file(root, sha, path)
+    if not restored:
+        return JSONResponse({"error": "missing", "message": "That version is not in the history."},
+                             status_code=404)
+    record.record(_cfg(), folder, f"charta: restored {path} from {sha[:8]}")
+    return JSONResponse({"restored": path})
+
+
+@app.get("/api/file/trash")
+def api_trash_list(folder: str) -> JSONResponse:
+    """What is in this folder's trash (nothing is ever truly deleted)."""
+    bad = _guard(folder)
+    if bad:
+        return bad
+    return JSONResponse({"items": tools.trash_listing(folder)})
+
+
+@app.post("/api/file/write")
+async def api_file_write(folder: str, req: Request) -> JSONResponse:
+    """Write a text file inside the folder, keeping the old version."""
+    bad = _guard(folder)
+    if bad:
+        return bad
+    body = await req.json()
+    try:
+        result = tools.write(folder, str(body.get("path", "")), str(body.get("text", "")))
+    except tools.ToolError as e:
+        return JSONResponse({"error": "tool-error", "message": str(e)}, status_code=400)
+    record.record(_cfg(), folder, f"charta: edited {result['path']}")
+    return JSONResponse(result)
+
+
+@app.post("/api/file/trash")
+async def api_file_trash(folder: str, req: Request) -> JSONResponse:
+    """Move a file to the folder's trash — it can always be brought back."""
+    bad = _guard(folder)
+    if bad:
+        return bad
+    body = await req.json()
+    try:
+        result = tools.trash(folder, str(body.get("path", "")))
+    except tools.ToolError as e:
+        return JSONResponse({"error": "tool-error", "message": str(e)}, status_code=400)
+    record.record(_cfg(), folder,
+                  f"charta: moved {result['from']} to the trash (not deleted)")
+    return JSONResponse(result)
+
+
+@app.post("/api/file/restore")
+async def api_file_restore(folder: str, req: Request) -> JSONResponse:
+    """Bring a file back from the trash."""
+    bad = _guard(folder)
+    if bad:
+        return bad
+    body = await req.json()
+    try:
+        result = tools.restore(folder, str(body.get("path", "")))
+    except tools.ToolError as e:
+        return JSONResponse({"error": "tool-error", "message": str(e)}, status_code=400)
+    record.record(_cfg(), folder, f"charta: restored {result['restored']} from the trash")
+    return JSONResponse(result)
 
 
 @app.get("/overview", response_class=HTMLResponse)
@@ -912,15 +1057,18 @@ async def api_approve(folder: str, req: Request) -> JSONResponse:
     files = set(body.get("files", []))
     do_all = bool(body.get("all"))
     done = []
+    moves: list[tuple[str, str, str]] = []
     for p in props:
         if p.status == "pending" and (do_all or p.source in files):
             try:
                 r = mover_mod.apply_proposal(folder, p)
                 p.status = "approved"
                 done.append(r.dst)
+                moves.append((r.src, r.dst, r.reason))
             except Exception as e:  # noqa: BLE001
                 done.append(f"FAILED {p.source}: {e}")
     prop_store.save_proposals(folder, props)
+    record.record_moves(_cfg(), folder, moves)
     try:
         build_receipts(folder)
     except Exception:
@@ -943,6 +1091,8 @@ async def api_reject(folder: str, req: Request) -> JSONResponse:
 @app.post("/api/undo")
 def api_undo(folder: str) -> JSONResponse:
     e = journal_mod.undo_last(folder)
+    if e:
+        record.record_undo(_cfg(), folder, e.get("src", ""), e.get("dst", ""))
     return JSONResponse({"undone": e})
 
 
@@ -950,9 +1100,11 @@ def api_undo(folder: str) -> JSONResponse:
 def api_outputs(folder: str) -> JSONResponse:
     ch = load_charter(folder)
     fields = ch.fields if ch else []
-    return JSONResponse({"receipts": build_receipts(folder),
-                         "study": build_study(folder),
-                         "data": build_data_entry(folder, fields)})
+    result = {"receipts": build_receipts(folder),
+              "study": build_study(folder),
+              "data": build_data_entry(folder, fields)}
+    record.record_outputs(_cfg(), folder, ["receipts", "notes", "data table"])
+    return JSONResponse(result)
 
 
 @app.post("/api/ask")

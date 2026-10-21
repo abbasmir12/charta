@@ -1,6 +1,9 @@
 [app]
 port = 8123
 host = "127.0.0.1"
+# Private git history per watched folder (.charta/git): every index, move and
+# rebuild is committed with a readable message. Set false to turn it off.
+history = true
 # Per-user state (window geometry). Blank = %APPDATA%/Charta on Windows,
 # ~/.config/charta elsewhere. Never written inside a watched folder.
 state_dir = ""

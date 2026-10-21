@@ -54,9 +54,9 @@
   `.section-note` + optional `.section-actions`). A green `--accent-soft` box
   on everything is banned.
 - **Grouped navigation rail.** Sidebar groups: `Work` (Folders, Overview, Files,
-  Review, Outputs, Gaps, Ask), `Records` (Activity), then a `rail-foot` (Settings,
-  New charter). Group labels are sentence-case 12px muted — never tracked
-  ALL-CAPS. Active item = filled `--raised` row + accent icon.
+  Review, Outputs, Gaps, Ask), `Records` (Activity, History), then a
+  `rail-foot` (Settings, New charter). Group labels are sentence-case 12px muted
+  — never tracked ALL-CAPS. Active item = filled `--raised` row + accent icon.
 - **One folder control.** The watched folder is switched from the toolbar
   breadcrumb (or the command palette); it is not repeated three times.
 - **Contextual toolbar (40px).** Brand · breadcrumb (folder / section) · live
@@ -106,7 +106,10 @@
    Paused folders keep their analysis and are listed apart from watched ones.
 1c. Files: one table of every file in the folder (path, kind, size, index
    state, why) with a reader panel that shows the extracted text, PDF pages
-   or a vision summary.
+   or a vision summary. Per file: Read, Edit (the old version is kept as
+   `<name>.charta-old`) and "Move to trash" — a reversible move, never a
+   delete. A ruled "In Charta's trash" section lists what was set aside, with
+   "Bring back" on each row.
 2. Overview: ruled stat strip, then ruled sections (Needs your review /
    Missing items / Latest outputs) with the mode chip and actions.
 3. Review: proposal cards + legend + J/K/A/R/E/Z keyboard + Undo; ruled
@@ -116,12 +119,18 @@
 5. Gaps: ruled checklist (found / missing + note), progress ring.
 6. Ask: chat + mic, streaming, citation chips, calm "couldn't find" state.
 7. Activity: ruled log (`what / file / why / when`), Undo per row.
+7b. History: the folder's own git trail (`.charta/git`) — one row per commit
+   with date, short sha, message and the files it touched. Every index, move,
+   edit, trash and rebuild is a commit, so the user can see exactly what
+   changed and why, and `git log` works in their own terminal too.
 8. Settings: ruled sections with `.facts` — provider+health, voice, window,
    privacy ("all local", "no delete button").
 
 ## 6. Trust/safety, states, a11y, perf
 
-- Persistent "100% local" status in the toolbar. No delete button anywhere.
+- Persistent "100% local" status in the toolbar. No delete button anywhere:
+  the Files page offers "Move to trash" (a reversible move into
+  `.charta/trash/`, with "Bring back"), never a destructive delete.
   Protected-folder refusal = friendly full-screen, never an error dump.
 - SSE live status in `#thinking`; hover/focus/active everywhere; visible focus.
 - A11y: keyboard everywhere, ARIA, AA contrast (gated by `tests/test_design.py`),

@@ -107,12 +107,17 @@ window.askIn=async(f,id,q)=>{
  const question=(q||(input?input.value:'')).trim();
  if(!box||!question)return;
  if(input)input.value='';
- box.innerHTML='<div class="msg ai skel" style="min-width:200px">searching…</div>';
+ box.innerHTML='<div class="msg ai skel" style="min-width:200px">reading the folder…</div>';
  try{
   const j=await post('/api/ask?folder='+encodeURIComponent(f),{q:question});
+  if(j.error){box.innerHTML='<div class="msg ai">'+escHtml(j.message||'Could not answer that.')+'</div>';return;}
   const cites=(j.citations||[]).map(c=>'<span class="chip cite mono">'+escHtml(c.file)+' p'+c.page+'</span>').join(' ');
-  box.innerHTML='<div class="msg ai"><div>'+escHtml(j.answer||'No answer.')+'</div>'+cites+'</div>';
- }catch(err){box.innerHTML='<div class="msg ai">Could not answer that right now.</div>';}
+  const meta=j.files?(' · '+j.files+' file(s)'+(j.cached?' (already read)':'')+' · '+escHtml(j.model||'')):'';
+  box.innerHTML='<div class="msg ai"><div>'+escHtml(j.answer||'No answer.')+'</div>'
+   +(meta?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+meta+'</p>':'')+cites+'</div>';
+ }catch(err){
+  box.innerHTML='<div class="msg ai">Something went wrong: '+escHtml((err&&err.message)||'unknown error')+'</div>';
+ }
 };
 // Read a file from the Files page: text, PDF, DOCX or a vision summary.
 window.readFile=async(f,rel)=>{
@@ -274,10 +279,11 @@ window.createCharter=async()=>{
 // --- ask the folder --------------------------------------------------------
 function renderAnswer(j){
  const log=document.getElementById('log');
- const cites=(j.citations||[]).map(c=>'<button class="chip cite mono" onclick="this.scrollIntoView()">'+c.file+' p'+c.page+'</button>').join(' ');
+ const cites=(j.citations||[]).map(c=>'<button class="chip cite mono" onclick="this.scrollIntoView()">'+escHtml(c.file)+' p'+c.page+'</button>').join(' ');
  const msg=document.createElement('div');
  msg.className='msg ai fadein';
- msg.innerHTML='<div>'+(j.answer||'No answer.')+'</div>'+cites;
+ const meta=j.files?(' · '+j.files+' file(s)'+(j.cached?' (already read)':'')+' · '+escHtml(j.model||'')):'';
+ msg.innerHTML='<div>'+(j.answer||'No answer.')+'</div>'+(meta?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+meta+'</p>':'')+cites;
  log.appendChild(msg);msg.scrollIntoView({block:'end'});
 }
 window.askFolder=async(question)=>{
@@ -287,10 +293,19 @@ window.askFolder=async(question)=>{
  if(input)input.value='';
  const log=document.getElementById('log');
  const mine=document.createElement('div');mine.className='msg me';mine.textContent=q;log.appendChild(mine);
- const pending=document.createElement('div');pending.className='msg ai skel';pending.style.minWidth='220px';pending.textContent='searching…';
- log.appendChild(pending);pending.scrollIntoView({block:'end'});
- try{const j=await post('/api/ask?folder='+encodeURIComponent(folder()),{q});pending.remove();renderAnswer(j);}
- catch(err){pending.remove();}
+ const pending=document.createElement('div');pending.className='msg ai skel';pending.style.minWidth='220px';
+ pending.textContent='reading the folder…';log.appendChild(pending);pending.scrollIntoView({block:'end'});
+ try{
+  const j=await post('/api/ask?folder='+encodeURIComponent(folder()),{q});
+  pending.remove();
+  if(j.error){toast(j.message||'Could not answer that.',false);return;}
+  renderAnswer(j);
+ }catch(err){
+  pending.remove();
+  const note=document.createElement('div');note.className='msg ai';
+  note.textContent='Something went wrong: '+(err&&err.message?err.message:'unknown error');
+  log.appendChild(note);
+ }
 };
 
 // --- outputs grid (sortable, sticky header) ---------------------------------

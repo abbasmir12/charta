@@ -107,13 +107,13 @@ def run_checks(cfg: AppConfig | None = None, *, ping: bool = True) -> list[Check
                             "fill in [llm] and [models] in config.toml"))
     elif ping:
         client = LLMClient(cfg)
-        reachable = client.ping(timeout=2.0)
+        reachable = client.ping(timeout=4.0)
         checks.append(Check("provider", reachable,
                             f"{cfg.llm_provider} @ {cfg.llm_base_url} ({cfg.generation_model})",
                             "" if reachable else "start it (Ollama: `ollama serve`) or set "
                                                  "CHARTA_BASE_URL to a reachable endpoint"))
         if reachable:
-            offered = client.models(timeout=2.5)
+            offered = client.models(timeout=5.0)
             if offered is None:
                 checks.append(Check("model", True,
                                     f"{cfg.generation_model} (provider cannot list models)",
@@ -218,9 +218,9 @@ def test_model(cfg: AppConfig | None = None, prompt: str = "hello",
                     model=cfg.generation_model, prompt=prompt)
     try:
         client = LLMClient(cfg)
-        out.reachable = client.ping(timeout=2.0)
+        out.reachable = client.ping(timeout=4.0)
         if out.reachable:
-            offered = client.models(timeout=2.5)
+            offered = client.models(timeout=5.0)
             if offered is not None:
                 out.model_listed = _model_listed(cfg.generation_model, offered)
         started = time.perf_counter()

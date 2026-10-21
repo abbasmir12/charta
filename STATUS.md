@@ -41,6 +41,21 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **Ask gives an answer again, and says what it did.** Asking
+  about a big folder (here: the repository itself) meant reading every file —
+  images included, each one a slow vision call — so the request took minutes
+  and the page sat there with no answer and no error. Now the index is bounded
+  (200 files, 45 s budget) and cached per folder: the first question reads the
+  folder, every later one is instant, and the answer reports how many files
+  were read, whether it was cached, which provider and model answered, and
+  whether some files were left out. The UI shows "reading the folder…" and, on
+  failure, the error in the chat instead of silence. `charta ask` prints the
+  same summary. Also: a provider whose `/models` route does not answer (slow
+  hosts like OpenRouter) is no longer reported as "down" — a 401 counts as
+  alive. Files: `charta/core/ask.py`, `charta/core/llm.py`,
+  `charta/core/doctor.py`, `charta/web/app.py`, `charta/web/static/app.js`,
+  `charta/cli.py`, `tests/test_web_ui.py`. Verified: `pytest -q` 197 passed.
+
 - 2026-10-21: **Ask is now strictly about one folder.** Two bugs made "no
   answer": an empty folder parameter meant `Path("")` = *the current
   directory*, so the Ask page (reached from the sidebar on the Folders page,

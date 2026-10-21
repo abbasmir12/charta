@@ -90,11 +90,24 @@ class LLMClient:
 
     # -- health ------------------------------------------------------------
     def ping(self, timeout: float = 2.0) -> bool:
-        """True if the provider answers on /models (used by `charta status`)."""
+        """True if the provider answers on /models (used by `charta status`).
+
+        Some hosts (OpenRouter among them) are slow to list models, so a
+        failed listing is not proof of a dead provider — the host itself is
+        probed as well.
+        """
+        if self.models(timeout=timeout) is not None:
+            return True
+        return self.reachable(timeout=timeout)
+
+    def reachable(self, timeout: float = 2.0) -> bool:
+        """True if the host answers at all (a 401 still means it is up)."""
         try:
             req = urllib.request.Request(self.base_url + "/models", headers=self._headers())
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.status < 500
+        except urllib.error.HTTPError as e:
+            return e.code < 500  # "unauthorised" is a live server, not a dead one
         except Exception:  # noqa: BLE001
             return False
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 import pathlib
 import re
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 
@@ -254,24 +255,39 @@ def _bm25(query_terms: list[str], doc_terms: list[str], df: Counter,
 
 def build_index(folder: str | pathlib.Path,
                 exclude_sensitive: bool = True,
-                vision: VisionFn | None = None) -> list[dict]:
+                vision: VisionFn | None = None,
+                max_files: int = 200,
+                budget_seconds: float = 45.0,
+                stats: dict | None = None) -> list[dict]:
     """Chunk every readable file and attach the signals used for ranking.
 
     An empty folder is refused: ``Path("")`` means "the current directory",
     which would silently index whatever the app happens to be sitting in.
+
+    ``max_files`` and ``budget_seconds`` bound the work: a folder with
+    thousands of files (or a big pile of images, each one a slow vision call)
+    must not turn one question into a coffee break. ``stats`` is filled in with
+    what was found and what was left out.
     """
     if not str(folder).strip():
         return []
     folder = pathlib.Path(folder)
     if not folder.is_dir():
         return []
+    started = time.monotonic()
     index: list[dict] = []
+    seen = 0
     for p in sorted(folder.rglob("*")):
         if not p.is_file() or ".charta" in p.parts:
             continue
         if p.suffix.lower() not in (".txt", ".md", ".csv", ".pdf", ".docx",
                                     ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"):
             continue
+        seen += 1
+        if len(index) >= max_files:
+            break
+        if time.monotonic() - started > budget_seconds:
+            break
         res = extract_text(p, vision)
         if res.method == "image-stub":  # no vision model: nothing text-like to index
             continue
@@ -289,7 +305,36 @@ def build_index(folder: str | pathlib.Path,
                 "numbers": set(re.findall(r"\b\d+\b", chunk)),
                 "types": _doc_types(f"{rel} {chunk}"),
             })
+    if stats is not None:
+        stats.update({"files": seen, "indexed": len(index),
+                      "truncated": seen > len(index),
+                      "seconds": round(time.monotonic() - started, 2)})
     return index
+
+
+def index_signature(folder: str | pathlib.Path) -> str:
+    """A cheap fingerprint of a folder: changes when its files do.
+
+    Used to keep the Ask index in memory and rebuild it only when something
+    actually changed, so the second question is instant.
+    """
+    root = pathlib.Path(folder)
+    if not root.is_dir():
+        return ""
+    files = 0
+    newest = 0.0
+    total = 0
+    for p in root.rglob("*"):
+        if not p.is_file() or ".charta" in p.parts:
+            continue
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        files += 1
+        total += st.st_size
+        newest = max(newest, st.st_mtime)
+    return f"{files}:{total}:{newest:.3f}"
 
 
 def _score(intent: Intent, doc: dict, df: Counter, n: int, avgdl: float) -> float:

@@ -25,7 +25,7 @@ from ..core import proposals as prop_store
 from ..core import record
 from ..core import tools
 from ..core import watchlist
-from ..core.ask import answer_query, build_index
+from ..core.ask import answer_query, build_index, index_signature
 from ..core.charter import create_charter_from_text, load_charter, save_charter
 from ..core.config import AppConfig
 from ..core.extract import VisionFn, extract_text
@@ -1252,7 +1252,7 @@ async def api_ask(req: Request, folder: str = "") -> JSONResponse:
                              "answer": "Type a question.", "citations": []}, status_code=400)
     cfg = _cfg()
     client = LLMClient(cfg)
-    idx = build_index(folder, vision=_vision(cfg, client))
+    idx, cached, stats = _ask_index(folder, cfg, client)
     if not idx:
         return JSONResponse({"answer": "That folder has nothing indexed yet — "
                                       "scan it first and I will have something to read.",
@@ -1261,8 +1261,34 @@ async def api_ask(req: Request, folder: str = "") -> JSONResponse:
     ans = answer_query(question, idx, client)
     return JSONResponse({"answer": ans.text,
                          "citations": [{"file": c.file, "page": c.page} for c in ans.citations],
-                         "folder": folder, "files": len(idx),
+                         "folder": folder, "files": len(idx), "cached": cached,
+                         "found": stats.get("files", len(idx)),
+                         "truncated": bool(stats.get("truncated")),
                          "provider": cfg.llm_provider, "model": cfg.generation_model})
+
+
+# The Ask index per folder, rebuilt only when the folder's files change. The
+# first question pays for the reading; every later one is instant.
+_ask_cache: dict[str, tuple[str, list[dict], dict]] = {}
+_ask_lock = threading.Lock()
+
+
+def _ask_index(folder: str, cfg: AppConfig, client: LLMClient) -> tuple[list[dict], bool, dict]:
+    """The index for a folder, from the cache when it is still fresh."""
+    key = str(pathlib.Path(folder).resolve())
+    signature = index_signature(folder)
+    with _ask_lock:
+        hit = _ask_cache.get(key)
+        if hit and hit[0] == signature:
+            return hit[1], True, hit[2]
+    stats: dict = {}
+    index = build_index(folder, vision=_vision(cfg, client), stats=stats)
+    with _ask_lock:
+        _ask_cache[key] = (signature, index, stats)
+        if len(_ask_cache) > 20:  # keep the cache small
+            for old in list(_ask_cache)[:-20]:
+                _ask_cache.pop(old, None)
+    return index, False, stats
 
 
 @app.get("/api/health")

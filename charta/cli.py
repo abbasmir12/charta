@@ -193,11 +193,19 @@ def cmd_ask(args: argparse.Namespace) -> int:
     ch = load_charter(folder)
     client = _client()
     cfg = AppConfig.load()
-    idx = build_index(folder, vision=_vision(cfg, client))
+    stats: dict = {}
+    idx = build_index(folder, vision=_vision(cfg, client), stats=stats)
+    if not idx:
+        print(f"Nothing indexed in {folder} yet — run: charta watch --folder {folder} --scan")
+        return 1
     ans = answer_query(args.question, idx, client)
     print(ans.text)
     for c in ans.citations:
         print(f"  [{c.file} p{c.page}] {c.excerpt[:120]}")
+    print(f"  (read {stats.get('indexed', len(idx))} of {stats.get('files', len(idx))} file(s)"
+          f" in {stats.get('seconds', 0)}s"
+          + (" — some files were left out to keep it quick" if stats.get("truncated") else "")
+          + f"; model {cfg.llm_provider}/{cfg.generation_model})")
     return 0
 
 

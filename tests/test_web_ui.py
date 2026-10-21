@@ -317,3 +317,25 @@ def test_asking_uses_the_configured_provider_and_model(client, tmp_path, monkeyp
     assert body["model"] == "fake-model"
     assert body["provider"]
     assert "sponsorship" in body["answer"].lower() or body["citations"]
+
+
+def test_ask_reads_the_folder_once_and_then_answers_from_the_cache(client, tmp_path):
+    (tmp_path / "sponsorship_2026.txt").write_text(
+        "Sponsorship agreement 2026 with Acme Corp. Amount: 5000 EUR.", encoding="utf-8")
+    first = client.post("/api/ask", params={"folder": str(tmp_path)},
+                        json={"q": "what is the 2026 sponsorship?"}).json()
+    assert first["files"] == 1 and first["cached"] is False
+    second = client.post("/api/ask", params={"folder": str(tmp_path)},
+                         json={"q": "and the amount?"}).json()
+    assert second["cached"] is True and second["files"] == 1
+    assert second["citations"]
+
+
+def test_ask_reports_how_much_of_the_folder_it_read(client, tmp_path):
+    for i in range(5):
+        (tmp_path / f"file{i}.txt").write_text(f"note {i}", encoding="utf-8")
+    body = client.post("/api/ask", params={"folder": str(tmp_path)},
+                       json={"q": "what are the notes?"}).json()
+    assert body["files"] == 5
+    assert body["found"] == 5
+    assert body["truncated"] is False

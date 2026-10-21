@@ -14,6 +14,7 @@ from .core import watchlist as watchlist_mod
 from .core.ask import answer_query, build_index
 from .core.charter import (create_charter_from_text, load_charter, preset_charter,
                            save_charter)
+from .core import config as config_mod
 from .core.config import AppConfig
 from .core.extract import VisionFn
 from .core.gaps import gaps_for_folder
@@ -316,10 +317,12 @@ def cmd_testmodel(args: argparse.Namespace) -> int:
 
     cfg = AppConfig.load()
     report = test_model(cfg, prompt=args.prompt, timeout=args.timeout)
+    config_files = config_mod.config_files()
 
     if args.json:
         print(json.dumps({"ok": report.ok, "provider": report.provider,
                           "base_url": report.base_url, "model": report.model,
+                          "config": [str(f) for f in config_files],
                           "prompt": report.prompt, "reachable": report.reachable,
                           "model_listed": report.model_listed, "reply": report.reply,
                           "error": report.error, "seconds": round(report.seconds, 3)},
@@ -330,6 +333,9 @@ def cmd_testmodel(args: argparse.Namespace) -> int:
              f"provider  {report.provider}",
              f"endpoint  {report.base_url}",
              f"model     {report.model}",
+             f"config    {config_mod.config_files()[0]}"
+             + (f" + {config_mod.config_files()[1].name} (yours — wins)"
+                if len(config_mod.config_files()) > 1 else ""),
              "",
              f"prompt    {report.prompt}",
              ""]

@@ -93,8 +93,12 @@ def run_checks(cfg: AppConfig | None = None, *, ping: bool = True) -> list[Check
                         "Charta needs Python 3.11+" if sys.version_info < (3, 11) else ""))
 
     path = config_mod.config_path()
-    checks.append(Check("config", path.exists(), str(path),
-                        "create config.toml at the repo root (see config.toml.example)"))
+    files = config_mod.config_files()
+    check = Check("config", path.exists(), str(path),
+                   "create config.toml at the repo root (see config.toml.example)")
+    if len(files) > 1:
+        check.detail = f"{path} + {files[1].name} (yours — wins)"
+    checks.append(check)
 
     provider_ok = bool(cfg.llm_provider and cfg.llm_base_url and cfg.generation_model)
     if not provider_ok:

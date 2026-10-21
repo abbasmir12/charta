@@ -1,0 +1,26 @@
+# Your own Charta settings.
+#
+# This file is yours: git never touches it, and `git pull` cannot undo your
+# changes. Whatever you put here wins over the shared `config.toml` next to it.
+#
+# Only the keys you want to change need to be here — everything else falls back
+# to config.toml (and then to the built-in defaults).
+#
+#   provider : ollama | lmstudio | llamacpp | vllm | openai | openrouter |
+#              groq | together | deepseek | custom
+#   base_url : only for a custom/self-hosted endpoint (otherwise the provider
+#              default is used)
+#   api_key  : prefer the CHARTA_API_KEY environment variable over a secret
+#              written down here
+#
+# Example — OpenRouter:
+#
+#   [llm]
+#   provider = "openrouter"
+#   vision = false
+#
+#   [models]
+#   generation = "google/gemma-3-27b-it"
+
+[llm]
+# provider = "openrouter"

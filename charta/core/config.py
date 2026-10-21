@@ -67,11 +67,19 @@ class AppConfig:
 
     @classmethod
     def load(cls, path: pathlib.Path | None = None) -> "AppConfig":
-        cfg_path = path or _default_path()
+        files = [path] if path else _config_files()
         data: dict = {}
-        if cfg_path.exists():
+        for cfg_path in files:
+            if not cfg_path.exists():
+                continue
             with open(cfg_path, "rb") as f:
-                data = tomllib.load(f)
+                part = tomllib.load(f)
+            # config.local.toml is layered over config.toml, section by section.
+            for section, values in part.items():
+                if isinstance(values, dict):
+                    data.setdefault(section, {}).update(values)
+                else:
+                    data[section] = values
         app = data.get("app", {})
         models = data.get("models", {})
         llm = data.get("llm", {})
@@ -141,3 +149,23 @@ def _default_path() -> pathlib.Path:
         if cand.exists():
             return cand
     return pathlib.Path.cwd() / "config.toml"
+
+
+def _config_files() -> list[pathlib.Path]:
+    """The config files in use: ``config.toml``, then ``config.local.toml``.
+
+    ``config.toml`` is shared with everyone (it lives in the repository), so
+    ``git pull`` can bring back the file you edited. ``config.local.toml`` is
+    yours: git never touches it, and it wins over ``config.toml``.
+    """
+    base = _default_path()
+    files = [base]
+    local = base.with_name("config.local.toml")
+    if local.exists():
+        files.append(local)
+    return files
+
+
+def config_files() -> list[pathlib.Path]:
+    """Every config file in use, in the order they are applied."""
+    return _config_files()

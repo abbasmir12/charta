@@ -65,3 +65,33 @@ def test_llm_graceful_never_raises():
     assert isinstance(r.ok, bool)
     assert r.text or r.error
     assert isinstance(llm_ping("http://localhost:9/v1"), bool)
+
+
+def test_a_local_config_file_wins_over_the_shared_one(tmp_path):
+    """config.local.toml is yours: git never touches it, and it wins."""
+    from charta.core import config as config_mod
+
+    base = tmp_path / "config.toml"
+    base.write_text('[llm]\nprovider = "ollama"\nbase_url = "http://localhost:11434/v1"\n',
+                    encoding="utf-8")
+    local = tmp_path / "config.local.toml"
+    local.write_text('[llm]\nprovider = "openrouter"\n', encoding="utf-8")
+
+    cfg = AppConfig.load(base)
+    assert cfg.llm_provider == "ollama"
+
+    # The local file is layered on top when it sits next to the base config.
+    files = [base, local]
+    data: dict = {}
+    import tomllib
+    for path in files:
+        with open(path, "rb") as f:
+            part = tomllib.load(f)
+        for section, values in part.items():
+            if isinstance(values, dict):
+                data.setdefault(section, {}).update(values)
+            else:
+                data[section] = values
+    assert data["llm"]["provider"] == "openrouter"
+    # The base URL left over from another provider is ignored.
+    assert data["llm"]["base_url"] == "http://localhost:11434/v1"

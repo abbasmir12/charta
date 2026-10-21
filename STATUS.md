@@ -41,6 +41,19 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **`config.local.toml` — settings that are yours.** `config.toml`
+  lives in the repository, so `git pull` kept restoring the file people had
+  edited (which is why "I set the provider to openrouter" had no effect: the
+  edit was gone). A new `config.local.toml` next to it is git-ignored, is never
+  overwritten, and is layered over `config.toml` section by section.
+  `config.local.toml.example` is the template. `charta testmodel`, `charta
+  status` and `charta doctor` now print which config files are in use, so a
+  stale or missing config is obvious. Files: `charta/core/config.py`,
+  `charta/core/doctor.py`, `charta/cli.py`, `.gitignore`,
+  `config.local.toml.example`, `README.md`, `tests/test_config_llm.py`.
+  Verified: `pytest -q` 193 passed; a local file switching the provider to
+  openrouter was seen by `testmodel` and `status`.
+
 - 2026-10-21: right-clicking a folder while Charta is already open now opens
   *that* folder in the running window. Before, the second instance only
   focused the existing window and dropped the folder on the floor, so the

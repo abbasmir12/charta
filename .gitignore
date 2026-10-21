@@ -7,6 +7,9 @@ dist/
 .venv/
 venv/
 
+# Your own settings: layered over config.toml, never touched by git pull.
+config.local.toml
+
 # Tests / tooling
 .pytest_cache/
 .ruff_cache/

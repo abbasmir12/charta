@@ -27,7 +27,13 @@ rebuild. Every move is journaled and undoable.
 ## Bring your own model provider
 
 Charta talks to **any OpenAI-compatible endpoint** (one code path, no code
-changes). Point `[llm]` in `config.toml` at whichever you prefer:
+changes). Point `[llm]` at whichever you prefer:
+
+> **Your settings vs the shared ones.** `config.toml` lives in the repository, so
+> `git pull` can bring back the file you edited. Put *your* settings in
+> `config.local.toml` next to it (copy `config.local.toml.example`): it is
+> git-ignored, never overwritten, and wins over `config.toml`.
+> `charta testmodel` and `charta doctor` both print the files in use.
 
 | Provider | `provider` | default `base_url` |
 | --- | --- | --- |

@@ -7,8 +7,9 @@ dist/
 .venv/
 venv/
 
-# Your own settings: layered over config.toml, never touched by git pull.
-config.local.toml
+# Your own settings: config.toml belongs to the machine, so `git pull` can
+# never bring back the file you edited. config.toml.example is the template.
+config.toml
 
 # Tests / tooling
 .pytest_cache/

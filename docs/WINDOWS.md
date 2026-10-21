@@ -20,11 +20,16 @@ git clone <your-repo> charta
 cd charta
 py -3 -m venv .venv
 .venv\Scripts\activate
+copy config.toml.example config.toml   :: your settings — git never touches it
 pip install -r requirements.txt
 pip install pywebview        :: native window (optional; without it we use your browser)
 ```
 
 `pip install -e ".[native]"` does both in one step if you prefer an editable install.
+
+> `config.toml` is git-ignored on purpose: it is your file, and `git pull`
+> cannot bring back the version you edited. The repository ships
+> `config.toml.example`; copy it once. `charta doctor` prints the file in use.
 
 > The `charta` command only exists after you install the project itself
 > (`pip install -e .` or `pip install -e ".[native]"`). `pip install -r

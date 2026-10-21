@@ -41,6 +41,21 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **`config.toml` belongs to the user (one file, no overlay).**
+  `config.toml` was tracked in git, so `git pull` kept restoring the file
+  people had edited — which is why changing the provider appeared to do
+  nothing. It is now git-ignored, and the repository ships
+  `config.toml.example` as the template. A fresh clone runs on the built-in
+  defaults until you copy the example. The lookup order is now
+  `CHARTA_CONFIG` → next to the installed package → the per-user state dir →
+  the current directory, so an installed app finds the file too, and
+  `charta testmodel` / `charta doctor` print the file in use. The
+  `config.local.toml` overlay from the previous commit was removed again: one
+  config file, and it is yours. Files: `charta/core/config.py`,
+  `charta/core/doctor.py`, `charta/cli.py`, `.gitignore`, `AGENTS.md`,
+  `README.md`, `docs/WINDOWS.md`, `config.toml.example`,
+  `tests/test_config_llm.py`. Verified: `pytest -q` 192 passed.
+
 - 2026-10-21: **`config.local.toml` — settings that are yours.** `config.toml`
   lives in the repository, so `git pull` kept restoring the file people had
   edited (which is why "I set the provider to openrouter" had no effect: the

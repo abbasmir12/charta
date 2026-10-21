@@ -67,19 +67,11 @@ class AppConfig:
 
     @classmethod
     def load(cls, path: pathlib.Path | None = None) -> "AppConfig":
-        files = [path] if path else _config_files()
+        cfg_path = path or config_path()
         data: dict = {}
-        for cfg_path in files:
-            if not cfg_path.exists():
-                continue
+        if cfg_path.exists():
             with open(cfg_path, "rb") as f:
-                part = tomllib.load(f)
-            # config.local.toml is layered over config.toml, section by section.
-            for section, values in part.items():
-                if isinstance(values, dict):
-                    data.setdefault(section, {}).update(values)
-                else:
-                    data[section] = values
+                data = tomllib.load(f)
         app = data.get("app", {})
         models = data.get("models", {})
         llm = data.get("llm", {})
@@ -137,35 +129,36 @@ class AppConfig:
 
 
 def config_path() -> pathlib.Path:
-    """The config.toml actually in use (repo root, else cwd)."""
-    return _default_path()
+    """The config.toml in use.
 
+    One file, one place. The search order:
+      1. ``CHARTA_CONFIG`` — an explicit path, if you set it
+      2. ``config.toml`` next to the installed package (a checkout)
+      3. ``config.toml`` in the per-user state dir (an installed app)
+      4. ``config.toml`` in the current directory
 
-def _default_path() -> pathlib.Path:
-    # config.toml at repo root (parent of charta pkg) or cwd fallback
-    here = pathlib.Path(__file__).resolve()
-    for parent in [here.parent.parent, pathlib.Path.cwd()]:
-        cand = parent / "config.toml"
-        if cand.exists():
-            return cand
-    return pathlib.Path.cwd() / "config.toml"
-
-
-def _config_files() -> list[pathlib.Path]:
-    """The config files in use: ``config.toml``, then ``config.local.toml``.
-
-    ``config.toml`` is shared with everyone (it lives in the repository), so
-    ``git pull`` can bring back the file you edited. ``config.local.toml`` is
-    yours: git never touches it, and it wins over ``config.toml``.
+    ``config.toml`` is git-ignored: it belongs to the machine, and a
+    ``git pull`` can never bring back the file you edited.
     """
-    base = _default_path()
-    files = [base]
-    local = base.with_name("config.local.toml")
-    if local.exists():
-        files.append(local)
-    return files
+    for candidate in config_candidates():
+        if candidate.exists():
+            return candidate
+    return config_candidates()[-1]
+
+
+def config_candidates() -> list[pathlib.Path]:
+    """Every place a config.toml is looked for, in order."""
+    explicit = os.environ.get("CHARTA_CONFIG", "").strip()
+    here = pathlib.Path(__file__).resolve()
+    candidates: list[pathlib.Path] = []
+    if explicit:
+        candidates.append(pathlib.Path(explicit))
+    candidates.append(here.parent.parent / "config.toml")
+    candidates.append(AppConfig().state_path().parent / "config.toml")
+    candidates.append(pathlib.Path.cwd() / "config.toml")
+    return candidates
 
 
 def config_files() -> list[pathlib.Path]:
-    """Every config file in use, in the order they are applied."""
-    return _config_files()
+    """The config file in use (a single file — Charta has exactly one)."""
+    return [config_path()]

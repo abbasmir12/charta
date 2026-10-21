@@ -91,7 +91,7 @@ AGENTS.md
 STATUS.md
 DESIGN.md
 README.md
-config.toml
+config.toml.example   # config.toml itself is git-ignored (it is the user's)
 ```
 
 Any UI change must follow DESIGN.md.
@@ -106,7 +106,10 @@ Any UI change must follow DESIGN.md.
   (config/env) and the UI must label it as cloud. No telemetry, no CDN
   (fonts/icons bundled locally).
 - No hard-coded paths, ports, or model names. All config in one file:
-  `config.toml` at repo root (loaded by `charta.core.config`).
+  `config.toml` (loaded by `charta.core.config`). It is git-ignored — it
+  belongs to the machine, so a `git pull` can never undo a user's edit.
+  The repository ships `config.toml.example` as the template; the search order
+  is `CHARTA_CONFIG` → next to the package → the state dir → the cwd.
 - Every AI call: timeout + 1 retry + graceful fallback message when the
   provider is unreachable. Request structured JSON, validate with Pydantic;
   on invalid JSON retry once, then log to STATUS.md Failures & Lessons.

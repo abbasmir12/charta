@@ -29,11 +29,12 @@ rebuild. Every move is journaled and undoable.
 Charta talks to **any OpenAI-compatible endpoint** (one code path, no code
 changes). Point `[llm]` at whichever you prefer:
 
-> **Your settings vs the shared ones.** `config.toml` lives in the repository, so
-> `git pull` can bring back the file you edited. Put *your* settings in
-> `config.local.toml` next to it (copy `config.local.toml.example`): it is
-> git-ignored, never overwritten, and wins over `config.toml`.
-> `charta testmodel` and `charta doctor` both print the files in use.
+> **One config file, and it is yours.** `config.toml` is git-ignored: it belongs
+> to the machine, so `git pull` can never bring back the file you edited. A
+> fresh clone ships `config.toml.example` — copy it once:
+> `copy config.toml.example config.toml`. `charta testmodel` and
+> `charta doctor` print the file in use. Set `CHARTA_CONFIG` to point at a
+> different one.
 
 | Provider | `provider` | default `base_url` |
 | --- | --- | --- |

@@ -333,9 +333,7 @@ def cmd_testmodel(args: argparse.Namespace) -> int:
              f"provider  {report.provider}",
              f"endpoint  {report.base_url}",
              f"model     {report.model}",
-             f"config    {config_mod.config_files()[0]}"
-             + (f" + {config_mod.config_files()[1].name} (yours — wins)"
-                if len(config_mod.config_files()) > 1 else ""),
+             f"config    {config_mod.config_path()}",
              "",
              f"prompt    {report.prompt}",
              ""]

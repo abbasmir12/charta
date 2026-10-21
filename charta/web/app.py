@@ -351,6 +351,11 @@ def mode_pill(mode: str) -> str:
             else '<span class="chip pill-suggest">Suggest mode</span>')
 
 
+def mode_pill_class(mode: str) -> str:
+    """The class of the mode chip (so a button can wear it)."""
+    return "pill-auto" if mode == "auto" else "pill-suggest"
+
+
 def _watch_controls(folder: str, ch: Any) -> str:
     """Watch/unwatch + rescan controls for a folder that has a charter."""
     if not ch or not folder:
@@ -417,7 +422,12 @@ def folders_page(folder: str = "") -> str:
         state_chip = ('<span class="chip watching"><span class="icon">'
                       f'{icon("activity", 14)}</span> Watching</span>' if is_watching
                       else '<span class="chip">Paused</span>')
-        mode_chip = mode_pill(ch.mode if ch else "suggest")
+        current_mode = ch.mode if ch else "suggest"
+        other_mode = "auto" if current_mode == "suggest" else "suggest"
+        mode_chip = (f'<button type="button" class="chip {mode_pill_class(current_mode)}" '
+                     f'onclick="setMode({f!r}, {other_mode!r})" '
+                     f'title="Switch this folder to {other_mode} mode">'
+                     f'{mode_pill(current_mode)}</button>')
         purpose = ch.purpose if ch else "No charter yet — open the folder to set one up."
         ask_id = f"ask-{fid}"
         actions = [
@@ -689,6 +699,28 @@ async def api_file_restore(folder: str, req: Request) -> JSONResponse:
         return JSONResponse({"error": "tool-error", "message": str(e)}, status_code=400)
     record.record(_cfg(), folder, f"charta: restored {result['restored']} from the trash")
     return JSONResponse(result)
+
+
+@app.post("/api/mode")
+def api_mode(folder: str, mode: str = "") -> JSONResponse:
+    """Switch one folder between suggest and auto mode (opt-in, per folder).
+
+    Auto mode moves new files as they arrive. Suggest mode only proposes.
+    """
+    bad = _guard(folder)
+    if bad:
+        return bad
+    if mode not in ("suggest", "auto"):
+        return JSONResponse({"error": "bad-mode", "message": "Mode must be suggest or auto."},
+                             status_code=400)
+    ch = load_charter(folder)
+    if ch is None:
+        return JSONResponse({"error": "no-charter", "message": "Create a charter first."},
+                             status_code=400)
+    ch.mode = mode
+    ch.updated = ""
+    save_charter(pathlib.Path(folder), ch)
+    return JSONResponse({"mode": mode, "folder": folder})
 
 
 @app.get("/overview", response_class=HTMLResponse)

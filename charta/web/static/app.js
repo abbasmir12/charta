@@ -93,6 +93,13 @@ async function pollScan(job){
 }
 window.watchFolder=async(f)=>{await post('/api/watch?folder='+encodeURIComponent(f));location.reload();};
 window.unwatchFolder=async(f)=>{await post('/api/unwatch?folder='+encodeURIComponent(f));location.reload();};
+// Switch one folder between suggest and auto mode.
+window.setMode=async(f,mode)=>{
+ try{
+  await post('/api/mode?folder='+encodeURIComponent(f)+'&mode='+encodeURIComponent(mode));
+  location.reload();
+ }catch(err){toast('Could not change the mode for that folder.',false);}
+};
 // Ask a question about one specific folder from the Folders page.
 window.askIn=async(f,id,q)=>{
  const box=document.getElementById(id);

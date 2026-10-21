@@ -253,3 +253,26 @@ def test_file_tools_refuse_to_write_outside_the_folder(client, tmp_path):
     assert res.status_code == 400
     assert res.json()["error"] == "tool-error"
 
+
+
+def test_a_folder_can_switch_between_suggest_and_auto_mode(client, tmp_path):
+    from charta.core.charter import load_charter, preset_charter, save_charter
+
+    save_charter(tmp_path, preset_charter("student"))
+    assert load_charter(tmp_path).mode == "suggest"
+    res = client.post("/api/mode", params={"folder": str(tmp_path), "mode": "auto"})
+    assert res.status_code == 200 and res.json()["mode"] == "auto"
+    assert load_charter(tmp_path).mode == "auto"
+    back = client.post("/api/mode", params={"folder": str(tmp_path), "mode": "suggest"})
+    assert back.status_code == 200
+    assert load_charter(tmp_path).mode == "suggest"
+
+
+def test_the_mode_switch_rejects_nonsense_and_protected_folders(client, tmp_path):
+    from charta.core.charter import preset_charter, save_charter
+
+    save_charter(tmp_path, preset_charter("student"))
+    res = client.post("/api/mode", params={"folder": str(tmp_path), "mode": "yolo"})
+    assert res.status_code == 400
+    protected = client.post("/api/mode", params={"folder": "C:\\Windows", "mode": "auto"})
+    assert protected.status_code == 403

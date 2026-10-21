@@ -41,6 +41,13 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: per-folder mode switch. The mode chip on the Folders page is now
+  a button: it flips one folder between suggest and auto (`POST /api/mode`,
+  writing the charter's mode back to `.charta/charter.md`), so auto mode stays
+  an explicit, per-folder opt-in. Files: `charta/web/app.py`,
+  `charta/web/static/app.js`, `tests/test_web_ui.py`. Verified: `pytest -q`
+  188 passed.
+
 - 2026-10-21: **Bulk scans with progress, and a fix for two git races.**
   `POST /api/scan` now runs in the background and reports progress
   (`/api/scan/status`: done/total/current file), so a folder with hundreds of

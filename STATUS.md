@@ -41,6 +41,22 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **Folders dashboard + Files view + a registry that remembers.**
+  New `/folders` page lists every folder Charta knows: how many are watched,
+  each folder's purpose, mode, files/indexed/pending/gaps/moves, watching-since
+  and last-scan, with Open/Files/Ask/Scan/Stop-watching actions and an inline
+  ask box per folder. New `/files` page lists every file in a folder with its
+  index state and why, and a reader that shows extracted text, PDF pages or a
+  vision summary (`/api/file/read`, traversal outside the folder refused).
+  `watchlist.py` now keeps a record of every folder with a `watching` flag, so
+  unwatching pauses instead of forgetting and re-watching resumes the existing
+  analysis (charter, proposals and journal live in the folder's `.charta/`).
+  Nav gains Folders and Files (DESIGN.md §2/§5 updated). Files:
+  `charta/core/watchlist.py`, `charta/web/app.py`, `charta/web/icons.py`,
+  `charta/web/static/app.js`, `DESIGN.md`, `tests/test_web_ui.py`,
+  `tests/test_watchlist.py`. Verified: `pytest -q` 168 passed; the Folders and
+  Files pages were rendered against a demo folder.
+
 - 2026-10-20: document that the `charta` command comes from installing the
   project (`pip install -e ".[native]"`), not from `pip install -r
   requirements.txt`. Files: `README.md`, `docs/WINDOWS.md`. Verified: docs only,

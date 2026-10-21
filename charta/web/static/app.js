@@ -64,6 +64,39 @@ window.undoLast=async()=>{await post('/api/undo?folder='+encodeURIComponent(fold
 window.startWatching=async()=>{await post('/api/watch?folder='+encodeURIComponent(folder()));location.reload();};
 window.stopWatching=async()=>{await post('/api/unwatch?folder='+encodeURIComponent(folder()));location.reload();};
 window.scanNow=async()=>{await post('/api/scan?folder='+encodeURIComponent(folder()));location.reload();};
+window.scanFolder=async(f)=>{await post('/api/scan?folder='+encodeURIComponent(f));location.reload();};
+window.watchFolder=async(f)=>{await post('/api/watch?folder='+encodeURIComponent(f));location.reload();};
+window.unwatchFolder=async(f)=>{await post('/api/unwatch?folder='+encodeURIComponent(f));location.reload();};
+// Ask a question about one specific folder from the Folders page.
+window.askIn=async(f,id,q)=>{
+ const box=document.getElementById(id);
+ const input=document.getElementById(id+'-input');
+ const question=(q||(input?input.value:'')).trim();
+ if(!box||!question)return;
+ if(input)input.value='';
+ box.innerHTML='<div class="msg ai skel" style="min-width:200px">searching…</div>';
+ try{
+  const j=await post('/api/ask?folder='+encodeURIComponent(f),{q:question});
+  const cites=(j.citations||[]).map(c=>'<span class="chip cite mono">'+escHtml(c.file)+' p'+c.page+'</span>').join(' ');
+  box.innerHTML='<div class="msg ai"><div>'+escHtml(j.answer||'No answer.')+'</div>'+cites+'</div>';
+ }catch(err){box.innerHTML='<div class="msg ai">Could not answer that right now.</div>';}
+};
+// Read a file from the Files page: text, PDF, DOCX or a vision summary.
+window.readFile=async(f,rel)=>{
+ const holder=document.getElementById('reader');
+ if(!holder)return;
+ holder.innerHTML='<div class="card"><div class="skel" style="height:60px">reading…</div></div>';
+ try{
+  const j=await api('/api/file/read?folder='+encodeURIComponent(f)+'&path='+encodeURIComponent(rel));
+  const body=(j.text||'').trim();
+  holder.innerHTML='<div class="card fadein"><div class="card-head"><h3 class="mono">'
+   +escHtml(j.file||rel)+'</h3><span class="chip">'+escHtml(j.method||'text')+' · '+j.pages+' page(s)</span></div>'
+   +'<pre class="mono" style="white-space:pre-wrap;max-height:420px;overflow:auto">'
+   +escHtml(body||'(no text)')+'</pre></div>';
+ }catch(err){
+  holder.innerHTML='<div class="card"><p class="muted">Could not read that file.</p></div>';
+ }
+};
 window.approveOne=async(src)=>{await post('/api/approve?folder='+encodeURIComponent(folder()),{files:[src]});
  const card=document.querySelector('.prop-card');if(card)card.style.opacity='0.4';toast('Approved '+src,true);};
 window.rejectOne=async(src)=>{await post('/api/reject?folder='+encodeURIComponent(folder()),{files:[src]});location.reload();};

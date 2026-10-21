@@ -9,9 +9,11 @@ from charta.web.app import app
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
     # Point the provider at a closed port: AI calls fail fast and fall back.
     monkeypatch.setenv("CHARTA_BASE_URL", "http://127.0.0.1:9/v1")
+    # Keep the watched-folder registry inside the test's temp dir.
+    monkeypatch.setenv("CHARTA_STATE_DIR", str(tmp_path / "state"))
     return TestClient(app)
 
 
@@ -131,3 +133,51 @@ def test_setup_redirects_protected_folder_to_the_refusal_screen(client):
     assert res.status_code in (302, 307)
     assert "/protected" in res.headers["location"]
 
+
+
+def test_folders_page_lists_the_watched_folders(client, tmp_path):
+    from charta.core.charter import preset_charter, save_charter
+
+    save_charter(tmp_path, preset_charter("student"))
+    client.post("/api/watch", params={"folder": str(tmp_path)})
+    text = client.get("/folders").text
+    assert "Watched folders" in text
+    assert tmp_path.name in text
+    assert "1 folder watched" in text
+    assert "Ask about this folder" in text or "Ask about" in text
+
+
+def test_unwatching_keeps_the_folder_and_its_analysis(client, tmp_path):
+    from charta.core.charter import preset_charter, save_charter
+
+    save_charter(tmp_path, preset_charter("student"))
+    (tmp_path / "lecture_07.txt").write_text("lecture 7", encoding="utf-8")
+    client.post("/api/watch", params={"folder": str(tmp_path)})
+    client.post("/api/scan", params={"folder": str(tmp_path)})
+    client.post("/api/unwatch", params={"folder": str(tmp_path)})
+
+    text = client.get("/folders").text
+    assert "Paused" in text and "Resume watching" in text
+    assert "0 folders watched" in text
+    # The analysis is still there: the file keeps its index state.
+    files = client.get("/files", params={"folder": str(tmp_path)}).text
+    assert "lecture_07.txt" in files and "pending" in files
+
+
+def test_files_page_lists_files_and_reads_them(client, tmp_path):
+    (tmp_path / "notes.md").write_text("hello from the folder", encoding="utf-8")
+    text = client.get("/files", params={"folder": str(tmp_path)}).text
+    assert "notes.md" in text and "Read" in text
+    body = client.get("/api/file/read", params={"folder": str(tmp_path),
+                                                 "path": "notes.md"}).json()
+    assert body["text"] == "hello from the folder"
+    assert body["method"] == "text"
+
+
+def test_file_read_refuses_paths_outside_the_folder(client, tmp_path):
+    secret = tmp_path.parent / "secret.txt"
+    secret.write_text("nope", encoding="utf-8")
+    res = client.get("/api/file/read", params={"folder": str(tmp_path),
+                                                "path": "../secret.txt"})
+    assert res.status_code == 400
+    assert res.json()["error"] == "outside-folder"

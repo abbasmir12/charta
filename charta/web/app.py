@@ -23,7 +23,7 @@ from ..core import watchlist
 from ..core.ask import answer_query, build_index
 from ..core.charter import create_charter_from_text, load_charter, save_charter
 from ..core.config import AppConfig
-from ..core.extract import VisionFn
+from ..core.extract import VisionFn, extract_text
 from ..core.gaps import gaps_for_folder
 from ..core.llm import LLMClient
 from ..core.outputs import build_data_entry, build_receipts, build_study
@@ -142,11 +142,13 @@ def folder_picker_html() -> str:
 </div></div></div>"""
 
 
-NAV_ITEMS = ["overview", "review", "outputs", "gaps", "ask", "activity", "settings"]
-NAV_LABELS = {"overview": "Overview", "review": "Review", "outputs": "Outputs",
+NAV_ITEMS = ["folders", "overview", "files", "review", "outputs", "gaps", "ask",
+             "activity", "settings"]
+NAV_LABELS = {"folders": "Folders", "overview": "Overview", "files": "Files",
+              "review": "Review", "outputs": "Outputs",
               "gaps": "Gaps", "ask": "Ask", "activity": "Activity", "settings": "Settings"}
 # Grouped navigation: high-frequency work first, records second, settings in the foot.
-NAV_GROUPS = [("Work", ["overview", "review", "outputs", "gaps", "ask"]),
+NAV_GROUPS = [("Work", ["folders", "overview", "files", "review", "outputs", "gaps", "ask"]),
               ("Records", ["activity"])]
 LOCAL_PROVIDERS = ("ollama", "lmstudio", "llamacpp", "vllm")
 
@@ -365,6 +367,177 @@ def _provider_up() -> bool:
         return LLMClient(_cfg()).ping(timeout=2.0)
     except Exception:  # noqa: BLE001
         return False
+
+
+@app.get("/folders", response_class=HTMLResponse)
+def folders_page(folder: str = "") -> str:
+    """Every folder Charta knows about: watched, paused, and what is in them."""
+    cfg = _cfg()
+    entries = watchlist.load(cfg)
+    cards: list[str] = []
+    paused: list[str] = []
+    watched_count = 0
+    total_files = 0
+    total_pending = 0
+    total_gaps = 0
+
+    for entry in entries:
+        f = entry["folder"]
+        if not pathlib.Path(f).exists():
+            continue
+        ch = load_charter(f)
+        props = prop_store.load_proposals(f)
+        pending = [p for p in props if p.status == "pending"]
+        gaps = gaps_for_folder(f, ch.expected) if ch else []
+        missing = [g for g in gaps if not g.found]
+        on_disk = _folder_files(f)
+        total_files += len(on_disk)
+        total_pending += len(pending)
+        total_gaps += len(missing)
+        is_watching = bool(entry.get("watching", True))
+        if is_watching:
+            watched_count += 1
+        fid = "f" + str(abs(hash(f)) % 100000)
+        facts = [("Files in folder", str(len(on_disk))),
+                 ("Indexed", str(len(props))),
+                 ("Waiting for review", str(len(pending))),
+                 ("Missing items", str(len(missing))),
+                 ("Moves logged", str(len(journal_mod.entries(f)))),
+                 ("Watching since", entry.get("added_at", "") or "—"),
+                 ("Last scan", entry.get("last_scan", "") or "never")]
+        facts_html = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in facts)
+        state_chip = ('<span class="chip watching"><span class="icon">'
+                      f'{icon("activity", 14)}</span> Watching</span>' if is_watching
+                      else '<span class="chip">Paused</span>')
+        mode_chip = mode_pill(ch.mode if ch else "suggest")
+        purpose = ch.purpose if ch else "No charter yet — open the folder to set one up."
+        ask_id = f"ask-{fid}"
+        actions = [
+            f'<a class="btn btn-primary" href="/overview?folder={quote(f)}">Open</a>',
+            f'<a class="btn" href="/files?folder={quote(f)}">Files</a>',
+            f'<a class="btn" href="/ask?folder={quote(f)}">Ask</a>',
+            f'<button type="button" class="btn" onclick="scanFolder({f!r})">'
+            f'<span class="icon">{icon("scan", 16)}</span> Scan now</button>',
+        ]
+        if is_watching:
+            actions.append(f'<button type="button" class="btn btn-ghost" '
+                           f'onclick="unwatchFolder({f!r})">Stop watching</button>')
+        else:
+            actions.append(f'<button type="button" class="btn btn-primary" '
+                           f'onclick="watchFolder({f!r})">Resume watching</button>')
+        card = f"""<div class="card fadein">
+<div class="card-head"><h3>{_basename(f)}</h3><div class="row">{state_chip}{mode_chip}</div></div>
+<p class="mono muted">{escape_attr(f)}</p>
+<p class="muted">{escape_attr(purpose)}</p>
+<dl class="facts">{facts_html}</dl>
+<div class="row">{''.join(actions)}</div>
+<div class="row" style="margin-top:var(--s3)">
+<input id="{ask_id}-input" type="text" placeholder="Ask about this folder…" aria-label="Ask about {escape_attr(f)}">
+<button type="button" class="btn" onclick="askIn({f!r}, {ask_id!r})">
+<span class="icon">{icon("ask", 16)}</span> Ask</button></div>
+<div id="{ask_id}"></div></div>"""
+        (cards if is_watching else paused).append(card)
+
+    if not entries:
+        body = empty_state("folder-add", "No folders yet",
+                           "Right-click a folder in Explorer and choose “Watch with Charta”, "
+                           "or set one up from here.",
+                           '<a class="btn btn-primary" href="/">Set up a folder</a>')
+    else:
+        body = f'<div class="stack">{"".join(cards)}</div>'
+
+    strip = "".join(
+        f'<div class="stat"><div class="n">{value}</div>'
+        f'<div class="k"><span class="icon">{icon(ic, 15)}</span>{label}</div></div>'
+        for value, label, ic in [
+            (watched_count, _plural(watched_count, "folder watched", "folders watched"), "folder"),
+            (total_files, _plural(total_files, "file in them", "files in them"), "stack"),
+            (total_pending, _plural(total_pending, "waiting for review", "waiting for review"), "review"),
+            (total_gaps, _plural(total_gaps, "gap found", "gaps found"), "gaps")])
+    sub = (f"{watched_count} folder{'s' if watched_count != 1 else ''} watched, "
+           f"{len(entries)} known in total.")
+    sections = [f'<div class="stat-strip">{strip}</div>']
+    if cards:
+        sections.append(
+            '<section class="section"><div class="section-head">'
+            '<h2 class="section-title">Watched folders</h2>'
+            '<span class="section-note">New files are analysed as they arrive.</span></div>'
+            f'<div class="stack">{"".join(cards)}</div></section>')
+    if paused:
+        sections.append(
+            '<section class="section"><div class="section-head">'
+            '<h2 class="section-title">Paused</h2>'
+            '<span class="section-note">Kept with their analysis — resume any time.</span></div>'
+            f'<div class="stack">{"".join(paused)}</div></section>')
+    inner = f"""{page_head("Folders", sub, f'<a class="btn btn-primary" href="/">'
+                                f'<span class="icon">{icon("folder-add", 16)}</span> Add a folder</a>')}
+{''.join(sections) if entries else body}"""
+    return shell("folders", folder, inner)
+
+
+def _folder_files(folder: str) -> list[pathlib.Path]:
+    """Every real file in a watched folder (``.charta/`` is Charta's own)."""
+    root = pathlib.Path(folder)
+    if not root.exists():
+        return []
+    out: list[pathlib.Path] = []
+    for p in sorted(root.rglob("*")):
+        if not p.is_file():
+            continue
+        if ".charta" in p.parts:
+            continue
+        out.append(p)
+    return out
+
+
+def escape_attr(text: str) -> str:
+    """Escape a string for use inside an HTML attribute."""
+    return (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;"))
+
+
+def _plural(count: int, one: str, many: str) -> str:
+    """Label that agrees with the number in front of it."""
+    return f"{count} {one if count == 1 else many}"
+
+
+@app.get("/files", response_class=HTMLResponse)
+def files_page(folder: str = "") -> str:
+    """What Charta has seen in this folder: every file, its index state, and a reader."""
+    if not folder:
+        return shell("files", folder, empty_state("stack", "No folder selected",
+                                                 "Pick a watched folder to see the files inside it.",
+                                                 '<a class="btn btn-primary" href="/folders">Open folders</a>'))
+    ch, mode = _page(folder, "files")
+    props = {p.source: p for p in prop_store.load_proposals(folder)}
+    rows: list[str] = []
+    for path in _folder_files(folder):
+        rel = str(path.relative_to(pathlib.Path(folder)))
+        prop = props.get(rel)
+        status = prop.status if prop else "not indexed"
+        badge = '<span class="badge-sensitive">sensitive</span>' if (prop and prop.sensitive) else ""
+        size = path.stat().st_size
+        kind = path.suffix.lstrip(".").lower() or "file"
+        rows.append(
+            f'<tr><td class="mono">{rel}</td><td>{kind}</td><td>{size:,} B</td>'
+            f'<td>{status}</td><td class="muted">{prop.reason if prop else ""} {badge}</td>'
+            f'<td><button type="button" class="btn btn-ghost" '
+            f'onclick="readFile({folder!r}, {rel!r})">Read</button></td></tr>')
+    if rows:
+        table = (f'<table class="grid"><thead><tr><th>File</th><th>Kind</th><th>Size</th>'
+                 f'<th>Index state</th><th>Why</th><th></th></tr></thead>'
+                 f'<tbody>{"".join(rows)}</tbody></table>')
+    else:
+        table = empty_state("empty", "Nothing here yet",
+                            "Drop files into this folder and Charta will index them.",
+                            f'<button type="button" class="btn" onclick="scanFolder({folder!r})">'
+                            f'<span class="icon">{icon("scan", 16)}</span> Scan now</button>')
+    inner = f"""{page_head("Files", "Every file Charta has seen in this folder, and what it thinks of it.",
+                          f'<button type="button" class="btn" onclick="scanFolder({folder!r})">'
+                          f'<span class="icon">{icon("scan", 16)}</span> Scan now</button>')}
+<div class="card">{table}</div>
+<div id="reader"></div>"""
+    return shell("files", folder, inner, mode)
 
 
 @app.get("/overview", response_class=HTMLResponse)
@@ -599,6 +772,36 @@ async def api_charter(folder: str, req: Request) -> JSONResponse:
     save_charter(pathlib.Path(folder), ch)
     return JSONResponse({"purpose": ch.purpose, "preset": ch.preset,
                          "fields": ch.fields, "mode": ch.mode})
+
+
+@app.get("/api/file/read")
+def api_file_read(folder: str, path: str) -> JSONResponse:
+    """Read one file inside a watched folder (text, PDF, DOCX, or a vision summary).
+
+    The path is resolved inside the folder — a traversal outside it is refused.
+    """
+    bad = _guard(folder)
+    if bad:
+        return bad
+    root = pathlib.Path(folder).resolve()
+    target = (root / path).resolve()
+    if not str(target).startswith(str(root)):
+        return JSONResponse({"error": "outside-folder",
+                              "message": "Charta only reads files inside the folder."},
+                             status_code=400)
+    if not target.is_file():
+        return JSONResponse({"error": "missing", "message": "That file is not there."},
+                             status_code=404)
+    if ".charta" in target.parts:
+        return JSONResponse({"error": "internal",
+                              "message": "That file belongs to Charta."}, status_code=400)
+    cfg = _cfg()
+    client = LLMClient(cfg)
+    result = extract_text(target, _vision(cfg, client))
+    return JSONResponse({"file": str(target.relative_to(root)),
+                         "text": result.text[:20000],
+                         "pages": result.pages, "method": result.method,
+                         "size": target.stat().st_size})
 
 
 @app.get("/api/fs/list")

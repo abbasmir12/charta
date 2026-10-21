@@ -53,8 +53,8 @@
   class="section">` blocks separated by a top hairline (`.section-head` +
   `.section-note` + optional `.section-actions`). A green `--accent-soft` box
   on everything is banned.
-- **Grouped navigation rail.** Sidebar groups: `Work` (Overview, Review,
-  Outputs, Gaps, Ask), `Records` (Activity), then a `rail-foot` (Settings,
+- **Grouped navigation rail.** Sidebar groups: `Work` (Folders, Overview, Files,
+  Review, Outputs, Gaps, Ask), `Records` (Activity), then a `rail-foot` (Settings,
   New charter). Group labels are sentence-case 12px muted — never tracked
   ALL-CAPS. Active item = filled `--raised` row + accent icon.
 - **One folder control.** The watched folder is switched from the toolbar
@@ -99,6 +99,14 @@
    autogrow textarea + rotating placeholder, mic (hold/Space, waveform),
    3 preset chips, Mode dropdown, path field, "Create charter" → staged
    progress → charter card.
+1b. Folders (app-level): stat strip (folders watched, files in them, waiting
+   for review, gaps), then one card per folder — name, path, purpose, mode
+   chip, state chip (Watching / Paused), a facts list, actions (Open, Files,
+   Ask, Scan now, Stop watching / Resume watching) and an inline ask box.
+   Paused folders keep their analysis and are listed apart from watched ones.
+1c. Files: one table of every file in the folder (path, kind, size, index
+   state, why) with a reader panel that shows the extracted text, PDF pages
+   or a vision summary.
 2. Overview: ruled stat strip, then ruled sections (Needs your review /
    Missing items / Latest outputs) with the mode chip and actions.
 3. Review: proposal cards + legend + J/K/A/R/E/Z keyboard + Undo; ruled

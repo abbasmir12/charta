@@ -43,3 +43,30 @@ def test_corrupt_registry_is_tolerated(tmp_path):
     (cfg.state_path() / "watched.json").write_text("{ not json", encoding="utf-8")
     assert watchlist.load(cfg) == []
     assert watchlist.folders(cfg) == []
+
+
+def test_unwatching_keeps_the_record_so_it_can_be_resumed(tmp_path):
+    cfg = _cfg(tmp_path)
+    folder = tmp_path / "receipts"
+    folder.mkdir()
+    watchlist.add(cfg, folder)
+    watchlist.remove(cfg, folder)
+    assert not watchlist.is_watched(cfg, folder)
+    # The folder is still known, so the Folders page can offer to resume it.
+    assert [e["folder"] for e in watchlist.known(cfg)] == [str(folder.resolve())]
+    assert watchlist.known(cfg)[0]["unwatched_at"]
+    # Watching it again keeps the original "added at" and clears the pause.
+    added = watchlist.known(cfg)[0]["added_at"]
+    watchlist.add(cfg, folder)
+    assert watchlist.is_watched(cfg, folder)
+    assert watchlist.known(cfg)[0]["added_at"] == added
+    assert not watchlist.known(cfg)[0]["unwatched_at"]
+
+
+def test_remove_returns_the_folders_still_watched(tmp_path):
+    cfg = _cfg(tmp_path)
+    a, b = tmp_path / "a", tmp_path / "b"
+    watchlist.add(cfg, a)
+    watchlist.add(cfg, b)
+    remaining = watchlist.remove(cfg, a)
+    assert remaining == [str(b.resolve())]

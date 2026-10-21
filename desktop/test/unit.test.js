@@ -89,3 +89,10 @@ test('watchedFolders reads the registry and unwatch posts', async () => {
 test('watchedFolders is empty when the backend is unreachable', async () => {
   assert.deepEqual(await backend.watchedFolders(1), []);
 });
+
+test('arguments can be read from another instance command line', () => {
+  const { argFrom } = require('../lib/args');
+  assert.equal(argFrom(['electron', '.', '--folder=D:\\My Docs', '--port=8123'], 'folder'), 'D:\\My Docs');
+  assert.equal(argFrom(['electron', '.'], 'folder', ''), '');
+  assert.equal(argFrom(['electron', '.', '--folder'], 'folder'), 'true');
+});

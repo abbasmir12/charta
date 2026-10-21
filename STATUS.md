@@ -41,6 +41,17 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: right-clicking a folder while Charta is already open now opens
+  *that* folder in the running window. Before, the second instance only
+  focused the existing window and dropped the folder on the floor, so the
+  right-click looked like it did nothing (the window stayed on whatever page
+  it was showing). The shell reads the folder out of the other instance's
+  command line and navigates to it; the argument parsing moved to
+  `desktop/lib/args.js` so it can be unit-tested.
+  Files: `desktop/main.js`, `desktop/lib/args.js`, `desktop/test/unit.test.js`,
+  `charta/shell/desktop.py`. Verified: `pytest -q` 192 passed;
+  `node --test test/unit.test.js` 9 passed.
+
 - 2026-10-21: **watching an empty folder now sticks.** The setup screen fired
   a second request to start the watcher and ignored its answer, so a failed
   watch still said "charter ready — watching" while the tray said "nothing

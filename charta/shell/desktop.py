@@ -309,10 +309,14 @@ def _run_electron(cfg: AppConfig, app: pathlib.Path | None, port: int,
     logger.warning("no health response on %s while the Electron window is up", port)
     code = child.poll()
     if code == ALREADY_RUNNING:
-        # Another Charta owns the window; it was just brought to the front.
-        # Opening a browser too would only confuse.
+        # Another Charta owns the window; it was just brought to the front and
+        # it opens the folder that was asked for. Opening a browser too would
+        # only confuse.
         print("Charta is already running — that window came to the front.")
-        print("  (if it looks out of date, quit it from the tray and start again)")
+        if folder:
+            print(f"  opening {folder} in it")
+        else:
+            print("  (if it looks out of date, quit it from the tray and start again)")
         applog.clear_session(cfg, "another instance is running")
         return 0
     if code is None:

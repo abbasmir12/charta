@@ -12,6 +12,7 @@ const { app, BrowserWindow, Tray, Menu, dialog, ipcMain, nativeImage, nativeThem
 const backend = require('./lib/backend');
 const paths = require('./lib/paths');
 const windowState = require('./lib/window-state');
+const { arg, argFrom } = require('./lib/args');
 
 const APP_ID = 'Charta.FolderWatcher';
 const TITLE = 'Charta';
@@ -27,14 +28,7 @@ const chromeFor = (dark) => (dark ? CHROME.dark : CHROME.light);
 const ROUTES = ['/', '/folders', '/overview', '/files', '/review', '/outputs', '/gaps',
   '/ask', '/activity', '/history', '/settings', '/styleguide'];
 
-const arg = (name, fallback = '') => {
-  const hit = process.argv.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
-  if (!hit) return fallback;
-  return hit.includes('=') ? hit.split('=').slice(1).join('=') : 'true';
-};
-
-const DEBUG = process.argv.includes('--debug');
-const SMOKE = process.argv.includes('--smoke');
+const DEBUG = process.argv.includes('--debug');const SMOKE = process.argv.includes('--smoke');
 // `--shots` alone writes to docs/screenshots; `--shots=<dir>` chooses another.
 const SHOTS_ARG = arg('shots');
 const SHOTS = SHOTS_ARG === '' ? '' : (SHOTS_ARG === 'true' ? path.join(paths.repoRoot(), 'docs', 'screenshots') : SHOTS_ARG);
@@ -314,7 +308,22 @@ async function main() {
     app.exit(ALREADY_RUNNING);
     return 0;
   }
-  app.on('second-instance', () => {
+  app.on('second-instance', (event, argv) => {
+    // A folder was right-clicked while Charta was already open: open *that*
+    // folder in the running window instead of ignoring the request.
+    const folder = argFrom(argv, 'folder', '');
+    if (folder) {
+      const target = `${baseUrl()}/?folder=${encodeURIComponent(folder)}`;
+      if (win) {
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+        win.webContents.loadURL(target);
+      } else {
+        createWindow(windowState.load(stateFile()), target);
+      }
+      return;
+    }
     if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
   });
 

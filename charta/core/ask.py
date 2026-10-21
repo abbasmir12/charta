@@ -469,10 +469,17 @@ def answer_query(query: str, index: list[dict], client: LLMClient | None = None,
             "Answer ONLY from this folder context. Cite [file pN]. Keep exact "
             "dates and amounts. If the context does not contain the answer, say so.\n"
             f"Q: {query}\nContext:\n{context}", system="Be concise and factual.")
-        if res.ok and res.text.strip():
+        # A model that has learned to call tools may answer this prompt with a
+        # tool call. That is not an answer — fall back to the matched text.
+        from .agent import strip_tool_calls
+        text = strip_tool_calls(res.text or "") if res.ok else ""
+        if text:
             note("done", "Answer ready.")
-            return Answer(res.text.strip(), cites, True)
-        note("warn", "The model did not answer — showing the matched text instead.")
+            return Answer(text, cites, True)
+        if res.ok:
+            note("warn", "The model answered with a tool call — showing the matched text instead.")
+        else:
+            note("warn", "The model did not answer — showing the matched text instead.")
     best = top[0]
     note("done", "Answer ready (from the index).")
     return Answer(f"Based on {best['file']} (p{best['page']}) — {best['desc']}: "

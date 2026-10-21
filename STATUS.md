@@ -41,6 +41,19 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **no more "No answer."** A model that has learned to call tools
+  sometimes answers the *final* prompt with a tool call too — Charta was
+  showing that JSON as if it were the answer, and a model that only ever calls
+  tools left the user with nothing. Now every tool call is stripped from an
+  answer, the agent asks for a final answer when the rounds run out, the
+  grounded retrieval path is used whenever the model's reply is not a real
+  answer, and the chat never shows a bare "No answer." — it says where it
+  stopped instead. Files: `charta/core/agent.py`, `charta/core/ask.py`,
+  `charta/web/app.py`, `charta/web/static/app.js`, `tests/test_agent.py`,
+  `tests/test_web_ui.py`. Verified: `pytest -q` 211 passed; a model stuck in a
+  tool loop, a model that returns nothing and a model that only chats were
+  each run through the web API and each produced a real answer.
+
 - 2026-10-21: **the model calls the tools itself.** Charta hands the model a
   catalogue of the folder's metadata (every file with its description, tags
   and fields) and three tools — `search_index`, `read_file`, `list_files` —

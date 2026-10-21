@@ -353,3 +353,13 @@ def test_ask_reports_how_much_of_the_folder_it_read(client, tmp_path):
                                         json={"q": "what are the notes?"}).json()["job"])
     assert body["files"] == 5
     assert body["state"] == "done"
+
+
+def test_a_question_always_produces_an_answer(client, tmp_path):
+    """Even a model that misbehaves must not leave the user with nothing."""
+    (tmp_path / "note.txt").write_text("The sponsorship for 2026 is 5000 EUR.", encoding="utf-8")
+    job = client.post("/api/ask", params={"folder": str(tmp_path)},
+                      json={"q": "tell me about the sponsorship"}).json()
+    body = _wait_job(client, job["job"])
+    assert body["state"] == "done"
+    assert body["answer"].strip()

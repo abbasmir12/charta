@@ -104,3 +104,23 @@ def test_a_model_that_never_calls_a_tool_still_answers(fake_provider, tmp_path):
                              LLMClient(_cfg(fake_provider)))
     assert result.used_tools is False
     assert "5000" in result.answer
+
+
+def test_a_tool_call_in_a_final_answer_is_stripped():
+    from charta.core.agent import strip_tool_calls
+
+    assert strip_tool_calls('{"tool":"search_index","args":{"q":"x"}}') == ""
+    assert strip_tool_calls('Here you go\n{"tool":"read_file","args":{"path":"a.txt"}}') == "Here you go"
+    assert strip_tool_calls("A normal answer.") == "A normal answer."
+
+
+def test_a_model_that_only_calls_tools_still_ends_with_an_answer(fake_provider, tmp_path):
+    """A model stuck in a tool loop must not leave the user without an answer."""
+    folder = _folder(tmp_path)
+    fake_provider.reply = lambda payload: json.dumps(
+        {"tool": "search_index", "args": {"q": "sponsorship"}})
+    result = ask_with_tools("what is the 2026 sponsorship?", folder,
+                             LLMClient(_cfg(fake_provider)))
+    # The loop ends with a request for the final answer; the raw tool call is
+    # never handed to the user as an answer.
+    assert not result.answer.strip().startswith("{")

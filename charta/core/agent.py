@@ -113,6 +113,28 @@ def catalogue(folder: str | pathlib.Path, limit: int = CATALOGUE_LIMIT) -> str:
     return "\n".join(lines)
 
 
+def strip_tool_calls(text: str) -> str:
+    """Remove any tool-call JSON from a reply.
+
+    A model that has learned to call tools sometimes answers the *final*
+    prompt with a tool call too. That is not an answer, and showing it to the
+    user as one is worse than saying nothing.
+    """
+    if not text:
+        return ""
+    cleaned = text
+    for _ in range(4):
+        action = _json_action(cleaned)
+        if not action:
+            break
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start == -1 or end <= start:
+            break
+        cleaned = (cleaned[:start] + cleaned[end + 1:]).strip()
+    return cleaned.strip()
+
+
 def _json_action(text: str) -> tuple[str, dict] | None:
     """Find a tool call in the model's reply.
 
@@ -211,7 +233,7 @@ def ask_with_tools(question: str, folder: str | pathlib.Path, client: LLMClient,
             break
         action = _json_action(text)
         if not action:
-            answer = text
+            answer = strip_tool_calls(text)
             note("done", "Answer ready.")
             break
         name, args = action
@@ -230,6 +252,22 @@ def ask_with_tools(question: str, folder: str | pathlib.Path, client: LLMClient,
                          "content": f"Tool result:\n{result}\n\n"
                                     "Continue: call another tool, or give the final answer "
                                     "(last line: FINAL: <your answer>)."})
+    # The model may still be asking for tools when the rounds run out. Ask it
+    # for the answer explicitly, so the user is never left with a tool call.
+    if not answer and calls:
+        note("work", "Asking the model to answer with what it has.")
+        messages.append({"role": "user",
+                         "content": "Give the final answer now, using what you have found. "
+                                    "Do not call any more tools. Last line: FINAL: <your answer>"})
+        try:
+            res = client.chat(messages, system=system)
+            answer = strip_tool_calls((res.text or "").strip())
+            if answer:
+                note("done", "Answer ready.")
+            else:
+                note("warn", "The model did not give an answer.")
+        except Exception as e:  # noqa: BLE001
+            note("warn", f"The final answer failed: {e}")
     result = AgentResult(answer=answer, calls=calls,
                           used_tools=bool(calls), files=used_files)
     if answer:

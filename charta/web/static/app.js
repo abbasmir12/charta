@@ -300,7 +300,8 @@ function renderAnswer(j){
  const msg=document.createElement('div');
  msg.className='msg ai fadein';
  const meta=j.files?(' · '+j.files+' file(s)'+(j.cached?' (already read)':'')+' · '+escHtml(j.model||'')):'';
- msg.innerHTML='<div>'+(j.answer||'No answer.')+'</div>'+(meta?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+meta+'</p>':'')+cites;
+ const body=(j.answer||'').trim()||'No answer came back — the steps above say where it stopped.';
+ msg.innerHTML='<div>'+escHtml(body)+'</div>'+(meta?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+meta+'</p>':'')+cites;
  log.appendChild(msg);msg.scrollIntoView({block:'end'});
 }
 // The steps of a running job, shown as a timeline while it works.

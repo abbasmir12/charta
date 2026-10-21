@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import pathlib
+import re
 import threading
 import uuid
 from contextlib import asynccontextmanager
@@ -1450,7 +1451,8 @@ def _run_ask(job: Job, folder: str, question: str) -> None:
         agent = ask_with_tools(question, folder, client, steps=steps)
         for s in steps:
             job.step(s["kind"], s["text"])
-        if agent.used_tools and agent.answer:
+        cited = bool(re.search(r"\[[^\]]+\s+p\d+\]", agent.answer or ""))
+        if agent.answer and (agent.used_tools or cited):
             job.answer = agent.answer
             job.citations = [{"file": c.file, "page": c.page} for c in agent.citations]
             job.extra.update({"tools": [c.name for c in agent.calls],
@@ -1459,12 +1461,14 @@ def _run_ask(job: Job, folder: str, question: str) -> None:
             job.state = "done"
             return
         if agent.answer and not agent.used_tools:
-            job.step("done", "The model answered from the catalogue.")
+            job.step("done", "The model answered from the catalogue — checking it against the files.")
         steps2: list[dict] = []
         ans = answer_query(question, idx, client, steps=steps2)
         for s in steps2:
             job.step(s["kind"], s["text"])
-        job.answer = ans.text
+        job.answer = ans.text or (
+            "I could not find anything about that in this folder. "
+            "Try a vendor, a year or an amount from the file name.")
         job.citations = [{"file": c.file, "page": c.page} for c in ans.citations]
         job.state = "done"
         job.extra.update({"files": len(idx), "provider": cfg.llm_provider,

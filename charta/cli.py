@@ -413,6 +413,44 @@ def cmd_logs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_stop(args: argparse.Namespace) -> int:
+    """Close the running Charta backend, cleanly and only that one.
+
+    The pid comes from the session file. If the recorded port is still open,
+    that instance is stopped; if it is closed, the session was stale and is
+    only cleared — nothing else on the machine is ever touched.
+    """
+    import os
+    import signal
+
+    from .core.applog import read_session, session_running, clear_session
+
+    cfg = AppConfig.load()
+    if not session_running(cfg):
+        # The port is not answering: the instance is gone. Clear the stale
+        # session and never gamble on what the old pid belongs to now.
+        clear_session(cfg, "stale session")
+        print("Charta is not running (cleared the stale session if there was one).")
+        return 0
+    session = read_session(cfg)
+    pid = int(session.get("pid") or 0)
+    if pid <= 0 or pid == os.getpid():
+        clear_session(cfg, "stale session")
+        print("The session was stale — cleared it.")
+        return 0
+    try:
+        if os.name == "nt":
+            os.system(f"taskkill /PID {pid} /F")
+        else:
+            os.kill(pid, signal.SIGTERM)
+    except OSError as e:
+        print(f"Could not stop pid {pid}: {e}")
+        return 1
+    clear_session(cfg, "stopped")
+    print(f"Stopped Charta (pid {pid}). Start it again with: charta open .")
+    return 0
+
+
 def cmd_shell(args: argparse.Namespace, install: bool) -> int:
     from .shell.windows_registry import install as inst, uninstall as uninst
 
@@ -464,8 +502,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--browser", action="store_true", help="skip the native window, use a browser")
     p.set_defaults(fn=cmd_open)
     p = sub.add_parser("logs", help="show the Charta log (startup, errors, exit reason)")
-    p.add_argument("--lines", type=int, default=60)
-    p.set_defaults(fn=cmd_logs)
+    p.add_argument("--lines", type=int, default=60); p.set_defaults(fn=cmd_logs)
+    p = sub.add_parser("stop", help="close the running Charta cleanly (safe: only the recorded pid)")
+    p.set_defaults(fn=cmd_stop)
     p = sub.add_parser("doctor", help="check this machine's Charta setup (read-only)")
     p.add_argument("--json", action="store_true")
     p.add_argument("--no-ping", action="store_true", help="skip the provider reachability check")

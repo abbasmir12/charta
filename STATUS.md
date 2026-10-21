@@ -41,6 +41,17 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **diagnosing a broken answer got one-click easy.** An Ask job
+  that fails now says so in the chat ("I stopped: <reason> … Last step: …")
+  instead of vanishing into a toast, every ask job is logged to the app log
+  (`charta logs` shows every step even if the window is the problem), the Ask
+  page has a **Copy diagnostics** button (page build vs server build, the
+  last job's full status), and a new `charta stop` closes the running
+  instance cleanly — it clears a stale session but never touches an
+  unrelated process. Files: `charta/web/static/app.js`, `charta/web/app.py`,
+  `charta/cli.py`, `tests/test_cli_stop.py`. Verified: `pytest -q` 215
+  passed; stop tested against a live listener and a stale session.
+
 - 2026-10-21: **a stale window now says so.** A window opened before an
   update keeps running yesterday's JavaScript against today's API — the Ask
   answer arrives as a job, the old page expects a plain answer, and it shows

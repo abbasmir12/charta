@@ -322,10 +322,7 @@ async function watchJob(job,onDone){
   let s;
   try{s=await api('/api/ask/status?job='+encodeURIComponent(job));}catch(e){return;}
   renderSteps(s.steps||[],s.state);
-  if(s.state==='done'||s.state==='failed'){
-   if(s.state==='failed'){toast(s.error||'Something went wrong.',false);}
-   onDone(s);return;
-  }
+  if(s.state==='done'||s.state==='failed'){onDone(s);return;}
   await new Promise(r=>setTimeout(r,350));
  }
 }
@@ -353,6 +350,14 @@ async function checkBuild(){
 setInterval(checkBuild,15000);
 window.addEventListener('load',()=>{checkBuild();});
 
+// One click that collects everything needed to diagnose a broken answer.
+window.copyDiag=async()=>{
+ const out={page_build:CHARTA_BUILD,url:location.href,ask:window.__lastAsk||null};
+ try{out.server=await api('/api/version');}catch(e){out.server=String(e);}
+ await navigator.clipboard.writeText(JSON.stringify(out,null,2));
+ toast('Diagnostics copied — paste them back.',true);
+};
+
 window.askFolder=async(question)=>{
  const input=document.getElementById('q');
  const q=typeof question==='string'&&question?question:(input.value||'').trim();
@@ -368,6 +373,18 @@ window.askFolder=async(question)=>{
   if(j.error){toast(j.message||'Could not answer that.',false);
    if(steps)steps.innerHTML='';return;}
   await watchJob(j.job,(done)=>{
+   window.__lastAsk=done;
+   if(done.state==='failed'){
+    // Never swallow a failure: it goes into the chat, where it can be read
+    // (and pasted back when something is broken).
+    const log=document.getElementById('log');
+    const bad=document.createElement('div');bad.className='msg ai';
+    bad.innerHTML='<div><strong>I stopped:</strong> '+escHtml(done.error||'unknown reason')+'</div>'
+     +(done.steps&&done.steps.length?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">Last step: '+escHtml(done.steps[done.steps.length-1].text)+'</p>':'');
+    log.appendChild(bad);bad.scrollIntoView({block:'end'});
+    if(steps)steps.innerHTML='';
+    return;
+   }
    renderAnswer({answer:done.answer,citations:done.citations,files:done.files,
     cached:done.cached,model:done.model});
   });

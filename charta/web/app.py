@@ -1057,7 +1057,9 @@ def ask_page(folder: str = "", q: str = "") -> str:
 <h2 class="section-title">Tools the model can call</h2>
 <span class="section-note">The model works from the index, not by reading everything</span></div>
 <div class="row">{''.join(f'<span class="chip mono">{t["name"]}</span>' for t in TOOL_SPECS)}</div>
-<p class="muted">{TOOL_HINT}</p></section>"""
+<p class="muted">{TOOL_HINT}</p>
+<p style="margin-top:var(--s2)"><button type="button" class="chip" onclick="copyDiag()">Copy diagnostics</button>
+<span class="muted"> — if an answer never arrives, paste what that gives you.</span></p></section>"""
     if q.strip():
         inner += (f'<script>window.addEventListener("load",()=>askFolder('
                   f'{q.strip()!r}));</script>')
@@ -1481,6 +1483,16 @@ def _run_ask(job: Job, folder: str, question: str) -> None:
         job.state = "failed"
         job.error = str(e)
         job.step("warn", f"Stopped: {e}")
+    finally:
+        # Everything the job did goes to the log, so a broken run can be
+        # diagnosed from `charta logs` even when the window is the problem.
+        asklog = applog.get_logger("ask")
+        asklog.info("ask job %s state=%s folder=%s q=%r", job.id, job.state,
+                    _basename(folder), question)
+        for step in job.steps:
+            asklog.info("  [%s] %s", step["kind"], step["text"])
+        if job.error:
+            asklog.warning("  error: %s", job.error)
 
 
 # The Ask index per folder, rebuilt only when the folder's files change. The

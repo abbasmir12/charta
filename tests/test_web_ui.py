@@ -394,3 +394,10 @@ def test_every_ask_box_polls_the_job():
             f"{name} must read done.answer from the polled job, not j.answer")
     # And no function anywhere may fall back to the old literal.
     assert src.count("No answer.") == 0
+
+
+def test_pages_and_scripts_come_with_no_store(client):
+    """A cached app.js against a changed API looks like a broken feature.
+    The server must never let the browser reuse them."""
+    assert client.get("/").headers.get("cache-control") == "no-store"
+    assert client.get("/static/app.js").headers.get("cache-control") == "no-store"

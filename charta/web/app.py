@@ -65,6 +65,21 @@ app = FastAPI(title="Charta", lifespan=_lifespan)
 if STATIC.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
+
+@app.middleware("http")
+async def _never_cache_ourselves(request: Request, call_next):
+    """Pages and scripts must never come from the browser's cache.
+
+    Electron keeps pages open for days; the app is updated while they are
+    open. A cached `app.js` running against a changed API looks like a
+    broken feature (it *was* "No answer." for days). Revalidation is free on
+    a localhost server, so: never cache.
+    """
+    response = await call_next(request)
+    if not request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 THINKING: dict[str, str] = {"msg": "Idle. Watching nothing yet."}
 
 _daemon: WatchDaemon | None = None

@@ -41,6 +41,14 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **the server now forbids caching itself.** A stale app.js in
+  the window was the recurring suspect for phantom failures, so every page
+  and static file is now served with `Cache-Control: no-store` — Electron
+  keeps windows open for days while the app gets updated underneath them,
+  and a cached script against a changed API looks like a broken feature.
+  Files: `charta/web/app.py`, `tests/test_web_ui.py`. Verified: `pytest -q`
+  219 passed.
+
 - 2026-10-21: **"not found" answers became useful, and blind image reads
   stopped.** The user's log showed Ask working end to end (the model calls
   list_files and read_file; the job finishes done) — but (a) a question like

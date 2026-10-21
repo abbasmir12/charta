@@ -734,6 +734,7 @@ def overview(folder: str = "") -> str:
         return shell("overview", folder, "<h1>Protected or unknown folder</h1><p>No charter found. Create one from setup.</p>", mode)
     props = prop_store.load_proposals(folder) if folder else []
     pend = [p for p in props if p.status == "pending"]
+    on_disk = _folder_files(folder) if folder else []
     gaps = gaps_for_folder(folder, ch.expected) if (folder and ch) else []
     miss = [g for g in gaps if not g.found]
     fq = quote(folder)
@@ -753,9 +754,15 @@ def overview(folder: str = "") -> str:
     next_action = (f'<a class="btn btn-primary" href="/review?folder={fq}"><span class="icon">{icon("review", 16)}</span> Review {len(pend)}</a>'
                    if pend else f'<a class="btn" href="/outputs?folder={fq}"><span class="icon">{icon("outputs", 16)}</span> Open outputs</a>')
     watching = bool(folder) and ch is not None and watchlist.is_watched(_cfg(), folder)
-    scanning_note = ('<p class="section-note">Charta is scanning this folder now — '
-                     'refresh in a moment, or press <em>Scan now</em>.</p>'
-                     if watching and not props else "")
+    empty = watching and not on_disk
+    if empty:
+        scanning_note = ('<p class="section-note">This folder is empty. Charta is watching it — '
+                          'drop files in and they will be analysed and sorted.</p>')
+    elif watching and not props:
+        scanning_note = ('<p class="section-note">Charta is scanning this folder now — '
+                         'refresh in a moment, or press <em>Scan now</em>.</p>')
+    else:
+        scanning_note = ""
     waiting = (f'{len(pend)} proposal waiting for you' if pend == 1
                else f'{len(pend)} proposals waiting for you' if pend
                else 'Nothing waiting — you are up to date.')
@@ -968,8 +975,25 @@ async def api_charter(folder: str, req: Request) -> JSONResponse:
     if mode in ("suggest", "auto"):
         ch.mode = mode
     save_charter(pathlib.Path(folder), ch)
+    # Start watching right here, on the server that will actually do it. The UI
+    # used to fire a second request and ignore its answer, so a failed watch
+    # looked like a successful one ("charter ready — watching", nothing watched).
+    watching = _start_watching(folder, ch.mode)
     return JSONResponse({"purpose": ch.purpose, "preset": ch.preset,
-                         "fields": ch.fields, "mode": ch.mode})
+                         "fields": ch.fields, "mode": ch.mode, "watching": watching})
+
+
+def _start_watching(folder: str, mode: str = "") -> bool:
+    """Put a folder on the watchlist and make sure the daemon is running."""
+    try:
+        cfg = _cfg()
+        watchlist.add(cfg, folder, mode=mode)
+        _daemon_get().start()
+        _sync_explorer_markers()
+        return True
+    except Exception as e:  # noqa: BLE001 - the UI reports it, the app keeps going
+        applog.get_logger("web").warning("could not start watching %s: %s", folder, e)
+        return False
 
 
 @app.get("/api/file/read")
@@ -1038,12 +1062,8 @@ def api_watch(folder: str) -> JSONResponse:
     if load_charter(folder) is None:
         return JSONResponse({"error": "no-charter", "message": "Create a charter first."},
                             status_code=400)
-    cfg = _cfg()
-    watchlist.add(cfg, folder)
-    _daemon_get().start()
-    _refresh_thinking()
-    _sync_explorer_markers()
-    return JSONResponse({"watching": True, "folders": watchlist.folders(cfg)})
+    _start_watching(folder)
+    return JSONResponse({"watching": True, "folders": watchlist.folders(_cfg())})
 
 
 @app.post("/api/unwatch")

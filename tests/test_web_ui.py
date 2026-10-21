@@ -276,3 +276,24 @@ def test_the_mode_switch_rejects_nonsense_and_protected_folders(client, tmp_path
     assert res.status_code == 400
     protected = client.post("/api/mode", params={"folder": "C:\\Windows", "mode": "auto"})
     assert protected.status_code == 403
+
+
+def test_creating_a_charter_starts_watching_right_away(client, tmp_path):
+    """The setup screen used to fire a second request and ignore its answer,
+    so a failed watch looked like a successful one."""
+    res = client.post("/api/charter", params={"folder": str(tmp_path)},
+                      json={"purpose": "Lecture PDFs for my degree", "mode": "suggest"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["watching"] is True
+    assert str(tmp_path.resolve()) in client.get("/api/watch/status").json()["folders"]
+
+
+def test_an_empty_watched_folder_says_so_instead_of_scanning(client, tmp_path):
+    from charta.core.charter import preset_charter, save_charter
+
+    save_charter(tmp_path, preset_charter("student"))
+    client.post("/api/watch", params={"folder": str(tmp_path)})
+    text = client.get("/overview", params={"folder": str(tmp_path)}).text
+    assert "This folder is empty" in text
+    assert "watching it" in text

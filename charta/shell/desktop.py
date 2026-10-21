@@ -299,47 +299,36 @@ def _run_electron(cfg: AppConfig, app: pathlib.Path | None, port: int,
         print(f"Charta is running on http://{cfg.host}:{port}"
               "  (closing the window keeps it in the tray; Quit there to stop)")
         print(f"window log: {electron_log}")
-    else:
-        # Not fatal: a hop or a slow first start shows up in the shell's own log.
-        logger.warning("no health response on %s while the Electron window is up", port)
-        backend_log = applog.log_path(cfg).with_name("backend.log")
-        print("The Charta window did not report a healthy backend."
-              " Look at these logs for the reason:")
-        print(f"  shell:   {electron_log}")
-        print(f"  backend: {backend_log}")
-        print(f"  app:     {applog.log_path(cfg)}")
-        print("  tip: `charta testmodel` proves the model; `charta doctor` the rest.")
-    applog.write_session(cfg, pid=child.pid, port=port, url=url_for(cfg.host, port, folder),
-                         view="electron", debug=debug)
-    try:
-        while True:
-            code = child.poll()
-            if code is not None:
-                elapsed = time.time() - started
-                logger.info("electron exited with %s after %.1fs", code, elapsed)
-                if code == ALREADY_RUNNING:
-                    # Another Charta owns the window; it was just brought to the
-                    # front. Opening a browser too would only confuse.
-                    print("Charta is already running — that window came to the front.")
-                    print("  (if it looks out of date, quit it from the tray and start again)")
-                    applog.clear_session(cfg, "another instance is running")
-                    return 0
-                applog.clear_session(cfg, f"electron exited ({code})")
-                if not health_ok(cfg.host, port):
-                    # The shell exited and left no backend behind, so the user
-                    # got no UI at all. Give them the browser on a fresh port
-                    # instead of a dead one (the shell owned that backend).
-                    logger.warning("electron exited with no live backend; browser fallback")
-                    print("The Charta window closed before it was ready"
-                          " — opening your browser instead.")
-                    print(applog.read_log(cfg, lines=10))
-                    return _browser_fallback(cfg, folder, debug)
-                return code
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("launcher interrupted; the Charta window keeps running")
-        print("Launcher stopped — the Charta window is still running (tray icon → Quit).")
+        # The shell owns the window and its backend now; the launcher has done
+        # its job. Exiting closes the console that Explorer opened — the window
+        # outlives us.
+        applog.write_session(cfg, pid=child.pid, port=port, url=url_for(cfg.host, port, folder),
+                             view="electron", debug=debug)
         return 0
+    # Not fatal: a hop or a slow first start shows up in the shell's own log.
+    logger.warning("no health response on %s while the Electron window is up", port)
+    code = child.poll()
+    if code == ALREADY_RUNNING:
+        # Another Charta owns the window; it was just brought to the front.
+        # Opening a browser too would only confuse.
+        print("Charta is already running — that window came to the front.")
+        print("  (if it looks out of date, quit it from the tray and start again)")
+        applog.clear_session(cfg, "another instance is running")
+        return 0
+    if code is None:
+        # The shell is still starting: leave it to it and close the console.
+        print("The window is still starting — it will be there in a moment.")
+        print(f"  shell log: {electron_log}")
+        applog.write_session(cfg, pid=child.pid, port=port,
+                             url=url_for(cfg.host, port, folder), view="electron", debug=debug)
+        return 0
+    # The shell is gone and left no backend behind, so the user got no UI at
+    # all. Give them the browser on a fresh port instead of a dead one.
+    logger.warning("electron exited with no live backend; browser fallback")
+    print(f"The Charta window closed before it was ready (exit {code})"
+          " — opening your browser instead.")
+    print(applog.read_log(cfg, lines=10))
+    return _browser_fallback(cfg, folder, debug)
 
 
 def health_ok(host: str, port: int, timeout: float = 1.5) -> bool:

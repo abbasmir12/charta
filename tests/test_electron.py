@@ -117,8 +117,10 @@ def test_run_opens_electron_without_starting_a_second_backend(monkeypatch, tmp_p
     assert out == 0
     assert launched["port"] > 0 and launched["folder"] == str(tmp_path / "watched")
     assert "Opening the Charta window" in capsys.readouterr().out
-    # The session records the window, not a hidden in-process server.
-    assert applog.read_session(cfg) == {}  # cleared on exit
+    # The launcher hands over and exits; the session keeps pointing at the
+    # window that is still running, so `charta logs` can see it.
+    session = applog.read_session(cfg)
+    assert session["pid"] == 4242 and session["view"] == "electron"
 
 
 def test_run_falls_back_to_the_browser_when_the_window_dies_instantly(monkeypatch, tmp_path, capsys):

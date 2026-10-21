@@ -41,6 +41,19 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **watching an empty folder now sticks.** The setup screen fired
+  a second request to start the watcher and ignored its answer, so a failed
+  watch still said "charter ready — watching" while the tray said "nothing
+  watched yet". The charter endpoint now starts the watch itself and reports
+  the real state; the setup card only claims to be watching when it is, and
+  the Overview says "this folder is empty — Charta is watching it" instead of
+  "scanning". The launcher also hands over to the shell and exits as soon as
+  the window is up, so the console Explorer opens no longer lingers for the
+  whole session (the session file keeps pointing at the live window).
+  Files: `charta/web/app.py`, `charta/web/static/app.js`,
+  `charta/shell/desktop.py`, `tests/test_web_ui.py`, `tests/test_electron.py`.
+  Verified: `pytest -q` 192 passed.
+
 - 2026-10-21: **stop the double window and the stale window.** A Charta left
   running in the tray (from before an update) held port 8123 and Electron's
   single-instance lock, so the next `charta open` could not start: the shell

@@ -257,13 +257,15 @@ window.createCharter=async()=>{
   if(r.status===403||j.error==='protected'){
    location.href='/protected?folder='+encodeURIComponent(dir)+'&reason='+encodeURIComponent(j.message||'');
    return;}
-  try{await fetch('/api/watch?folder='+encodeURIComponent(dir),{method:'POST'});}catch(_){}
   const fields=(j.fields||[]).map(f=>'<span class="chip">'+f+'</span>').join(' ');
-  out.innerHTML='<div class="card fadein"><div class="card-head"><h3>Charter ready — watching</h3>'
-   +'<span class="chip pill-auto">'+(j.mode==='auto'?'Auto mode':'Suggest mode')+'</span></div>'
+  const watching=j.watching!==false;
+  out.innerHTML='<div class="card fadein"><div class="card-head"><h3>'+(watching?'Charter ready — watching':'Charter ready')
+   +'</h3><span class="chip pill-auto">'+(j.mode==='auto'?'Auto mode':'Suggest mode')+'</span></div>'
    +'<p class="muted">Preset <span class="mono">'+j.preset+'</span> · fields: '+(fields||'—')+'</p>'
-   +'<p class="mono muted">'+j.purpose+'</p>'
-   +'<p class="muted">Charta is scanning existing files now — open the overview to watch it fill in.</p>'
+   +'<p class="mono muted">'+escHtml(j.purpose||'')+'</p>'
+   +(watching
+     ?'<p class="muted">Charta is watching this folder. Empty is fine — drop files in and they will be organised.</p>'
+     :'<p class="muted">The charter is saved, but the watcher did not start. Press Watch this folder on the overview.</p>')
    +'<div class="row"><a class="btn btn-primary" href="/overview?folder='+encodeURIComponent(dir)+'">Open overview</a>'
    +'<a class="btn" href="/review?folder='+encodeURIComponent(dir)+'">Review proposals</a></div></div>';
  }catch(err){out.innerHTML='<div class="card">Could not create the charter. '+(err.message||'')+'</div>';}

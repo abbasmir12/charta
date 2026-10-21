@@ -22,7 +22,8 @@ const CHROME = {
   dark: { bg: '#0E1012', symbol: '#ECEEEF' },
 };
 const chromeFor = (dark) => (dark ? CHROME.dark : CHROME.light);
-const ROUTES = ['/', '/overview', '/review', '/outputs', '/gaps', '/ask', '/activity', '/settings', '/styleguide'];
+const ROUTES = ['/', '/folders', '/overview', '/files', '/review', '/outputs', '/gaps',
+  '/ask', '/activity', '/history', '/settings', '/styleguide'];
 
 const arg = (name, fallback = '') => {
   const hit = process.argv.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
@@ -212,6 +213,7 @@ async function trayMenu(url) {
     : [{ label: 'Nothing watched yet', enabled: false }];
   return Menu.buildFromTemplate([
     { label: 'Open Charta', click: () => focusOrCreate(url) },
+    { label: 'Watched folders', click: () => navigate('/folders') },
     { label: 'Review proposals', click: () => navigate('/review') },
     { label: 'Ask the folder', click: () => navigate('/ask') },
     { type: 'separator' },

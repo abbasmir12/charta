@@ -41,6 +41,17 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: the desktop shell now knows the new screens. The Electron window
+  renders the server's pages (the sidebar is server-rendered), so a running
+  app keeps showing the old navigation until the backend is restarted — but
+  `desktop/main.js` had its own route list for the smoke run and the
+  screenshots, and it did not include `/folders`, `/files` or `/history`.
+  Both that list and `tools/ui_check.py` now cover all twelve screens, the
+  tray menu can jump to the Folders page, and a test guards that the shell and
+  the server know the same routes. Files: `desktop/main.js`,
+  `tools/ui_check.py`, `tests/test_electron.py`. Verified: `pytest -q` 189
+  passed; `node --test test/unit.test.js` 8 passed.
+
 - 2026-10-21: per-folder mode switch. The mode chip on the Folders page is now
   a button: it flips one folder between suggest and auto (`POST /api/mode`,
   writing the charter's mode back to `.charta/charter.md`), so auto mode stays

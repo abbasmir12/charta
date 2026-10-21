@@ -41,7 +41,8 @@ METRICS = """() => {
   };
 }"""
 
-ROUTES = ["/", "/overview", "/review", "/outputs", "/gaps", "/ask", "/activity", "/settings", "/styleguide"]
+ROUTES = ["/", "/folders", "/overview", "/files", "/review", "/outputs", "/gaps", "/ask",
+          "/activity", "/history", "/settings", "/styleguide"]
 
 # DESIGN.md promises the layout holds down to 900px wide, so measure there too.
 PASSES = [("desktop", 1280, 800, ("dark", "light")), ("narrow", 900, 700, ("dark",))]

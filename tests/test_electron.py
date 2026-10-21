@@ -195,3 +195,12 @@ def test_wait_ready_timeout_is_bounded(monkeypatch):
     started = time.time()
     assert desktop.wait_ready("127.0.0.1", 1, timeout=0.4) is False
     assert time.time() - started < 5
+
+def test_the_desktop_shell_knows_every_screen_the_server_serves():
+    """The Electron window renders the server's pages, so both must know the
+    same routes — otherwise the smoke run and the screenshots miss a screen."""
+    from charta.web.app import NAV_ITEMS
+
+    source = (electron.REPO_DESKTOP / "main.js").read_text(encoding="utf-8")
+    for item in NAV_ITEMS:
+        assert f"/{item}" in source, f"main.js does not know the /{item} screen"

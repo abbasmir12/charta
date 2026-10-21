@@ -41,6 +41,19 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **THE "instant No answer" bug, actually found.** The per-folder
+  ask box on the Folders dashboard (`askIn` in app.js) still read the Ask API
+  synchronously after Ask became a job API: it got a job object, found no
+  `answer` field, and rendered "No answer." immediately — without ever
+  calling the model. Fully valid restarts looked broken; three earlier fixes
+  missed it because they only covered the Ask page. Now `askIn` polls the
+  job like the Ask page (inline steps, "I stopped: <reason>" on failure, a
+  plain "No answer came back" only when the job itself is empty), and a
+  regression test walks every ask function in app.js and requires them to
+  poll the job and never read `j.answer` raw. Files:
+  `charta/web/static/app.js`, `tests/test_web_ui.py`. Verified: `pytest -q`
+  216 passed; `node --check` on app.js.
+
 - 2026-10-21: **diagnosing a broken answer got one-click easy.** An Ask job
   that fails now says so in the chat ("I stopped: <reason> … Last step: …")
   instead of vanishing into a toast, every ask job is logged to the app log

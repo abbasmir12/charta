@@ -101,20 +101,35 @@ window.setMode=async(f,mode)=>{
  }catch(err){toast('Could not change the mode for that folder.',false);}
 };
 // Ask a question about one specific folder from the Folders page.
+// Ask is a job (it can take a while), so this box polls it the same way the
+// Ask page does, and shows the reason when the answer never arrives.
 window.askIn=async(f,id,q)=>{
  const box=document.getElementById(id);
  const input=document.getElementById(id+'-input');
  const question=(q||(input?input.value:'')).trim();
  if(!box||!question)return;
  if(input)input.value='';
- box.innerHTML='<div class="msg ai skel" style="min-width:200px">reading the folder…</div>';
+ box.innerHTML='<div class="msg ai"><div>reading the folder…</div></div>';
  try{
   const j=await post('/api/ask?folder='+encodeURIComponent(f),{q:question});
   if(j.error){box.innerHTML='<div class="msg ai">'+escHtml(j.message||'Could not answer that.')+'</div>';return;}
-  const cites=(j.citations||[]).map(c=>'<span class="chip cite mono">'+escHtml(c.file)+' p'+c.page+'</span>').join(' ');
-  const meta=j.files?(' · '+j.files+' file(s)'+(j.cached?' (already read)':'')+' · '+escHtml(j.model||'')):'';
-  box.innerHTML='<div class="msg ai"><div>'+escHtml(j.answer||'No answer.')+'</div>'
-   +(meta?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+meta+'</p>':'')+cites+'</div>';
+  await watchJob(j.job,(done)=>{
+   window.__lastAsk=done;
+   if(done.state==='failed'){
+    box.innerHTML='<div class="msg ai"><div><strong>I stopped:</strong> '
+     +escHtml(done.error||'unknown reason')+'</div>'
+     +(done.steps&&done.steps.length
+       ?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">Last step: '
+        +escHtml(done.steps[done.steps.length-1].text)+'</p>':'')
+     +'</div>';
+    return;
+   }
+   const cites=(done.citations||[]).map(c=>'<span class="chip cite mono">'+escHtml(c.file)+' p'+c.page+'</span>').join(' ');
+   const meta=done.files?(' · '+done.files+' file(s)'+(done.cached?' (already read)':'')+' · '+escHtml(done.model||'')):'';
+   box.innerHTML='<div class="msg ai"><div>'+escHtml((done.answer||'').trim()
+     ||'No answer came back — open the Ask page for the full timeline.')+'</div>'
+    +(meta?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+meta+'</p>':'')+cites+'</div>';
+  });
  }catch(err){
   box.innerHTML='<div class="msg ai">Something went wrong: '+escHtml((err&&err.message)||'unknown error')+'</div>';
  }

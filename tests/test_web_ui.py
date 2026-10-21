@@ -1,6 +1,8 @@
 """Web UI polish: debug flag, icon, protected refusal, folder picker, charter mode."""
 from __future__ import annotations
 
+import pathlib
+import re
 import pytest
 from fastapi.testclient import TestClient
 
@@ -372,3 +374,23 @@ def test_the_page_carries_a_build_stamp_and_the_server_reports_its_own(client):
     version = client.get("/api/version").json()
     assert version["build"] and version["started"]
     assert version["build"] in page
+
+
+def test_every_ask_box_polls_the_job():
+    """/api/ask is a job; any box that reads j.answer from it directly shows
+    "No answer." instantly and never asks the model — the bug that looked
+    like a broken model. Guard every ask *function* against it."""
+    src = (pathlib.Path(__file__).parent.parent / "charta" / "web"
+           / "static" / "app.js").read_text(encoding="utf-8")
+    asking = ["askFolder", "askIn"]
+    starts = {name: src.index(f"window.{name}=") for name in asking}
+    ends = {name: src.find("\n};", starts[name]) for name in asking}
+    assert all(end > start for start, end in zip(starts.values(), ends.values()))
+    for name in asking:
+        body = src[starts[name]:ends[name]]
+        assert "/api/ask?" in body, f"{name} must ask /api/ask"
+        assert "watchJob(" in body, f"{name} must poll the ask job"
+        assert re.search(r"j\.answer", body) is None, (
+            f"{name} must read done.answer from the polled job, not j.answer")
+    # And no function anywhere may fall back to the old literal.
+    assert src.count("No answer.") == 0

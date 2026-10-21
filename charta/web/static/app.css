@@ -161,6 +161,21 @@ table.grid tbody tr:hover td{background:var(--raised)}
   animation:fadeUp var(--t-base) var(--ease) both}
 .msg.me{background:var(--solid);color:var(--solid-fg);align-self:flex-end;border-bottom-right-radius:var(--r-xs)}
 .msg.ai{background:var(--surface);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:var(--r-xs)}
+
+/* the agent's work, step by step */
+.steps-wrap{max-width:760px;margin-bottom:var(--s3)}
+.steps{display:flex;flex-direction:column;gap:var(--s1);
+  border-left:1px solid var(--border);padding-left:var(--s4);margin:var(--s1) 0}
+.step{display:flex;align-items:flex-start;gap:var(--s2);padding:var(--s1) 0;
+  animation:fadeUp var(--t-base) var(--ease) both}
+.step .icon{color:var(--faint);margin-top:2px;flex:0 0 auto}
+.step-text{font-size:var(--fs-sm);color:var(--muted)}
+.step.done .step-text{color:var(--text)}
+.step.done .icon{color:var(--success)}
+.step.warn .icon{color:var(--warning)}
+.step.active .icon{color:var(--accent1);animation:pulse 1.4s var(--ease) infinite}
+.step.active .step-text{color:var(--text)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .cite{display:inline-flex;align-items:center;gap:var(--s1);margin:var(--s3) var(--s1) 0 0}
 
 /* definition lists: facts without middle-dot meta strings */

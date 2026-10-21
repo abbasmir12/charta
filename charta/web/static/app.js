@@ -119,6 +119,23 @@ window.askIn=async(f,id,q)=>{
   box.innerHTML='<div class="msg ai">Something went wrong: '+escHtml((err&&err.message)||'unknown error')+'</div>';
  }
 };
+// Open a file with the system's default app (PDF viewer, editor…).
+window.openFile=async(f,rel)=>{
+ try{
+  await post('/api/file/open?folder='+encodeURIComponent(f),{path:rel});
+  toast('Opened '+rel);
+ }catch(err){toast('Could not open that file here.',false);}
+};
+// Show a file in Explorer / the file manager.
+window.revealFile=async(f,rel)=>{
+ try{await post('/api/file/reveal?folder='+encodeURIComponent(f),{path:rel});}
+ catch(err){toast('Could not show that file.',false);}
+};
+// Ask about one specific file: open the Ask page with the question ready.
+window.askAbout=(f,rel)=>{
+ const q='What is in '+rel+'?';
+ location.href='/ask?folder='+encodeURIComponent(f)+'&q='+encodeURIComponent(q);
+};
 // Read a file from the Files page: text, PDF, DOCX or a vision summary.
 window.readFile=async(f,rel)=>{
  const holder=document.getElementById('reader');
@@ -286,6 +303,30 @@ function renderAnswer(j){
  msg.innerHTML='<div>'+(j.answer||'No answer.')+'</div>'+(meta?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+meta+'</p>':'')+cites;
  log.appendChild(msg);msg.scrollIntoView({block:'end'});
 }
+// The steps of a running job, shown as a timeline while it works.
+function renderSteps(steps,state){
+ const box=document.getElementById('steps');
+ if(!box)return;
+ const icons={work:'scan',model:'sparkles',done:'check',warn:'alert'};
+ box.innerHTML='<div class="steps">'+steps.map((s,i)=>{
+  const last=i===steps.length-1&&state==='running';
+  return '<div class="step '+(last?'active ':'')+(s.kind==='warn'?'warn':(s.kind==='done'?'done':''))+'">'
+   +'<span class="icon">'+icon(icons[s.kind]||'info',15)+'</span>'
+   +'<span class="step-text">'+escHtml(s.text)+'</span></div>';
+ }).join('')+'</div>';
+}
+async function watchJob(job,onDone){
+ for(;;){
+  let s;
+  try{s=await api('/api/ask/status?job='+encodeURIComponent(job));}catch(e){return;}
+  renderSteps(s.steps||[],s.state);
+  if(s.state==='done'||s.state==='failed'){
+   if(s.state==='failed'){toast(s.error||'Something went wrong.',false);}
+   onDone(s);return;
+  }
+  await new Promise(r=>setTimeout(r,350));
+ }
+}
 window.askFolder=async(question)=>{
  const input=document.getElementById('q');
  const q=typeof question==='string'&&question?question:(input.value||'').trim();
@@ -293,15 +334,19 @@ window.askFolder=async(question)=>{
  if(input)input.value='';
  const log=document.getElementById('log');
  const mine=document.createElement('div');mine.className='msg me';mine.textContent=q;log.appendChild(mine);
- const pending=document.createElement('div');pending.className='msg ai skel';pending.style.minWidth='220px';
- pending.textContent='reading the folder…';log.appendChild(pending);pending.scrollIntoView({block:'end'});
+ const steps=document.getElementById('steps');
+ if(steps)steps.innerHTML='<div class="steps"><div class="step active"><span class="icon">'
+  +icon('scan',15)+'</span><span class="step-text">starting…</span></div></div>';
  try{
   const j=await post('/api/ask?folder='+encodeURIComponent(folder()),{q});
-  pending.remove();
-  if(j.error){toast(j.message||'Could not answer that.',false);return;}
-  renderAnswer(j);
+  if(j.error){toast(j.message||'Could not answer that.',false);
+   if(steps)steps.innerHTML='';return;}
+  await watchJob(j.job,(done)=>{
+   renderAnswer({answer:done.answer,citations:done.citations,files:done.files,
+    cached:done.cached,model:done.model});
+  });
  }catch(err){
-  pending.remove();
+  if(steps)steps.innerHTML='';
   const note=document.createElement('div');note.className='msg ai';
   note.textContent='Something went wrong: '+(err&&err.message?err.message:'unknown error');
   log.appendChild(note);

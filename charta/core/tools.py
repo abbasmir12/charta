@@ -8,6 +8,7 @@ actions are journalled and committed to the folder's history.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import shutil
 
@@ -135,3 +136,43 @@ def trash_listing(folder: str | pathlib.Path) -> list[dict]:
             out.append({"name": p.name, "path": rel, "size": p.stat().st_size,
                         "was": manifest.get(rel, "")})
     return out
+
+
+def open_in_system(path: str | pathlib.Path) -> bool:
+    """Open a file with the system's default app (PDF viewer, editor…)."""
+    target = pathlib.Path(path)
+    if not target.is_file():
+        return False
+    import subprocess
+    import sys
+
+    try:
+        if sys.platform == "win32":
+            os.startfile(str(target))  # type: ignore[attr-defined]  # noqa: S606
+        elif sys.platform == "darwin":
+            subprocess.run(["open", str(target)], check=False, timeout=20)
+        else:
+            subprocess.run(["xdg-open", str(target)], check=False, timeout=20)
+        return True
+    except Exception:  # noqa: BLE001 — opening is a convenience
+        return False
+
+
+def reveal_in_file_manager(path: str | pathlib.Path) -> bool:
+    """Show a file in Explorer / the file manager."""
+    target = pathlib.Path(path)
+    if not target.exists():
+        return False
+    import subprocess
+    import sys
+
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["explorer", "/select,", str(target)], check=False, timeout=20)
+        elif sys.platform == "darwin":
+            subprocess.run(["open", "-R", str(target)], check=False, timeout=20)
+        else:
+            subprocess.run(["xdg-open", str(target.parent)], check=False, timeout=20)
+        return True
+    except Exception:  # noqa: BLE001
+        return False

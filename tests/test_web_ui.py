@@ -15,6 +15,19 @@ def client(monkeypatch):
     monkeypatch.setenv("CHARTA_BASE_URL", "http://127.0.0.1:9/v1")
     return TestClient(app)
 
+def _wait_job(client, job: str, timeout: float = 30.0) -> dict:
+    """Wait for a background job (the UI polls the same way)."""
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        state = client.get("/api/ask/status", params={"job": job}).json()
+        if state.get("state") in ("done", "failed"):
+            return state
+        time.sleep(0.05)
+    raise AssertionError("the job did not finish in time")
+
+
 def _wait_scan(client, job: str, timeout: float = 20.0) -> dict:
     """Wait for a background scan to finish (the UI polls the same way)."""
     import time
@@ -311,22 +324,24 @@ def test_asking_without_a_folder_says_so_instead_of_guessing(client):
 def test_asking_uses_the_configured_provider_and_model(client, tmp_path, monkeypatch):
     (tmp_path / "note.txt").write_text("The sponsorship for 2026 is 5000 EUR.", encoding="utf-8")
     monkeypatch.setenv("CHARTA_MODEL", "fake-model")
-    body = client.post("/api/ask", params={"folder": str(tmp_path)},
-                       json={"q": "what is the 2026 sponsorship?"}).json()
+    started = client.post("/api/ask", params={"folder": str(tmp_path)},
+                          json={"q": "what is the 2026 sponsorship?"}).json()
+    body = _wait_job(client, started["job"])
     assert body["files"] == 1
     assert body["model"] == "fake-model"
     assert body["provider"]
+    assert body["steps"]  # the work is visible while it happens
     assert "sponsorship" in body["answer"].lower() or body["citations"]
 
 
 def test_ask_reads_the_folder_once_and_then_answers_from_the_cache(client, tmp_path):
     (tmp_path / "sponsorship_2026.txt").write_text(
         "Sponsorship agreement 2026 with Acme Corp. Amount: 5000 EUR.", encoding="utf-8")
-    first = client.post("/api/ask", params={"folder": str(tmp_path)},
-                        json={"q": "what is the 2026 sponsorship?"}).json()
-    assert first["files"] == 1 and first["cached"] is False
-    second = client.post("/api/ask", params={"folder": str(tmp_path)},
-                         json={"q": "and the amount?"}).json()
+    first = _wait_job(client, client.post("/api/ask", params={"folder": str(tmp_path)},
+                                         json={"q": "what is the 2026 sponsorship?"}).json()["job"])
+    assert first["files"] == 1
+    second = _wait_job(client, client.post("/api/ask", params={"folder": str(tmp_path)},
+                                          json={"q": "and the amount?"}).json()["job"])
     assert second["cached"] is True and second["files"] == 1
     assert second["citations"]
 
@@ -334,8 +349,7 @@ def test_ask_reads_the_folder_once_and_then_answers_from_the_cache(client, tmp_p
 def test_ask_reports_how_much_of_the_folder_it_read(client, tmp_path):
     for i in range(5):
         (tmp_path / f"file{i}.txt").write_text(f"note {i}", encoding="utf-8")
-    body = client.post("/api/ask", params={"folder": str(tmp_path)},
-                       json={"q": "what are the notes?"}).json()
+    body = _wait_job(client, client.post("/api/ask", params={"folder": str(tmp_path)},
+                                        json={"q": "what are the notes?"}).json()["job"])
     assert body["files"] == 5
-    assert body["found"] == 5
-    assert body["truncated"] is False
+    assert body["state"] == "done"

@@ -184,6 +184,14 @@ for `/api/health`, and everything else goes through the same guarded core.
   your own terminal, and an old version of a file can be restored with a click
 - **Bulk scans with progress**: scanning a folder with hundreds of files runs in
   the background and shows what it is working on
+- **A metadata index per folder** (`.charta/index.db`, SQLite): every file Charta
+  reads gets a row with its description, type, tags and the fields in it
+  (date, vendor, amount). Ask works from that index instead of re-reading the
+  folder, and **Search** finds files by name, tag, description or content
+- **Search** (`/search`): clickable results with the metadata that matched —
+  open in the system app, read in place, or ask about that file
+- **A work timeline in Ask**: every step is shown while it happens (read the
+  index → matched N files → asking provider/model)
 - Web UI (setup/overview/review/outputs/gaps/ask/activity/settings/styleguide), SSE live strip, voice hook (Web Speech in browser, faster-whisper in CLI)
 - Native window with dark title bar, Mica + solid fallback, taskbar icon/grouping, tray, remembered geometry, custom dropdowns and folder picker (see *Native-feel polish*), plus the Electron desktop shell
 - **Design system with tests**: WCAG-AA-checked palette (both themes), 4px spacing scale, 7-step type scale, and every `var(--token)` proven defined — `tests/test_design.py`

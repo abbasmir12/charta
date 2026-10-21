@@ -7,6 +7,7 @@ import pathlib
 import threading
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from typing import Any
 
 from urllib.parse import quote
@@ -19,6 +20,7 @@ from . import icons
 from ..core import applog
 from ..core import fsbrowse
 from ..core import history
+from ..core import index_db
 from ..core import journal as journal_mod
 from ..core import mover as mover_mod
 from ..core import proposals as prop_store
@@ -151,14 +153,14 @@ def folder_picker_html() -> str:
 
 
 NAV_ITEMS = ["folders", "overview", "files", "review", "outputs", "gaps", "ask",
-             "activity", "history", "settings"]
+             "search", "activity", "history", "settings"]
 NAV_LABELS = {"folders": "Folders", "overview": "Overview", "files": "Files",
               "review": "Review", "outputs": "Outputs",
-              "gaps": "Gaps", "ask": "Ask", "activity": "Activity",
-              "history": "History", "settings": "Settings"}
+              "gaps": "Gaps", "ask": "Ask", "search": "Search",
+              "activity": "Activity", "history": "History", "settings": "Settings"}
 # Grouped navigation: high-frequency work first, records second, settings in the foot.
 NAV_GROUPS = [("Work", ["folders", "overview", "files", "review", "outputs", "gaps", "ask"]),
-              ("Records", ["activity", "history"])]
+              ("Records", ["search", "activity", "history"])]
 LOCAL_PROVIDERS = ("ollama", "lmstudio", "llamacpp", "vllm")
 # When this backend started — the Settings page shows it, so a window that is
 # running older code (a leftover instance) is obvious at a glance.
@@ -181,7 +183,7 @@ def _nav(items: list[str], page: str, fq: str) -> str:
     """The rail. Folder pages are only offered when a folder is chosen."""
     out = []
     for n in items:
-        if n != "folders" and not fq:
+        if n not in ("folders", "search") and not fq:
             continue  # nothing to show yet — the Folders page picks one
         out.append(
             f'<a href="/{n}?folder={fq}" class="{"active" if page == n else ""}"'
@@ -230,6 +232,8 @@ def shell(page: str, folder: str, inner: str, mode: str = "suggest", label: str 
 <span class="spacer"></span>
 <button type="button" class="search" onclick="openPalette()" aria-label="Search and commands">
 <span class="icon">{icon("search", 15)}</span><span>Search</span><span class="kbd">Ctrl K</span></button>
+<a class="search" href="/search?folder={fq}" aria-label="Search the file index">
+<span class="icon">{icon("search", 15)}</span><span>Files</span></a>
 {status}
 <button type="button" class="btn btn-icon btn-ghost" onclick="toggleTheme()" aria-label="Switch theme">
 <span class="icon" data-theme-icon>{icon("moon")}</span></button>
@@ -246,6 +250,7 @@ def shell(page: str, folder: str, inner: str, mode: str = "suggest", label: str 
 <div id="palette" role="dialog" aria-modal="true" aria-label="Command palette">
 <div class="card glass"><input id="palInput" type="text" placeholder="Search or run a command…" oninput="palFilter(this.value)" aria-label="Commands">
 <div id="palList" class="stack">
+<button type="button" class="btn btn-ghost" onclick="location.href='/search?folder={fq}'"><span class="icon">{icon("search")}</span> Search the file index</button>
 <button type="button" class="btn btn-ghost" onclick="location.href='/review?folder={fq}'"><span class="icon">{icon("check")}</span> Approve all</button>
 <button type="button" class="btn btn-ghost" onclick="undoLast()"><span class="icon">{icon("undo")}</span> Undo last move</button>
 <button type="button" class="btn btn-ghost" onclick="location.href='/ask?folder={fq}'"><span class="icon">{icon("ask")}</span> Ask the folder</button>
@@ -543,21 +548,29 @@ def files_page(folder: str = "") -> str:
                                                  '<a class="btn btn-primary" href="/folders">Open folders</a>'))
     ch, mode = _page(folder, "files")
     props = {p.source: p for p in prop_store.load_proposals(folder)}
+    meta = index_db.file_meta(folder)
     rows: list[str] = []
     for path in _folder_files(folder):
         rel = str(path.relative_to(pathlib.Path(folder)))
         prop = props.get(rel)
-        status = prop.status if prop else "not indexed"
+        info = meta.get(rel, {})
+        status = prop.status if prop else (info.get("description", "") and "indexed" or "not indexed")
         badge = '<span class="badge-sensitive">sensitive</span>' if (prop and prop.sensitive) else ""
         size = path.stat().st_size
         kind = path.suffix.lstrip(".").lower() or "file"
+        tags = "".join(f'<span class="chip">{escape_attr(t)}</span>'
+                       for t in info.get("tags", [])[:4])
         rows.append(
-            f'<tr><td class="mono">{escape_attr(rel)}</td><td>{kind}</td><td>{size:,} B</td>'
-            f'<td>{status}</td><td class="muted">{escape_attr(prop.reason) if prop else ""} {badge}</td>'
+            f'<tr><td class="mono">{escape_attr(rel)}<div class="row" style="margin-top:var(--s1)">{tags}</div></td>'
+            f'<td>{kind}</td><td>{size:,} B</td>'
+            f'<td>{escape_attr(str(status))}</td>'
+            f'<td class="muted">{escape_attr(prop.reason) if prop else escape_attr(info.get("description", ""))} {badge}</td>'
             f'<td class="row"><button type="button" class="btn btn-ghost" '
             f'onclick="readFile({folder!r}, {rel!r})">Read</button>'
             f'<button type="button" class="btn btn-ghost" '
             f'onclick="editFile({folder!r}, {rel!r})">Edit</button>'
+            f'<button type="button" class="btn btn-ghost" '
+            f'onclick="openFile({folder!r}, {rel!r})">Open</button>'
             f'<button type="button" class="btn btn-ghost" '
             f'onclick="trashFile({folder!r}, {rel!r})">Move to trash</button></td></tr>')
     if rows:
@@ -732,6 +745,130 @@ def api_mode(folder: str, mode: str = "") -> JSONResponse:
     return JSONResponse({"mode": mode, "folder": folder})
 
 
+@app.get("/api/search")
+def api_search(q: str = "", folder: str = "") -> JSONResponse:
+    """Search the metadata index: names, tags, descriptions, fields and text.
+
+    With no folder it searches every watched folder and says which one each
+    result came from.
+    """
+    query = str(q or "").strip()
+    if not query:
+        return JSONResponse({"query": "", "results": [], "folders": []})
+    cfg = _cfg()
+    targets = [folder] if folder else watchlist.folders(cfg)
+    results: list[dict] = []
+    for target in targets:
+        if not target:
+            continue
+        for item in index_db.search(target, query, limit=25):
+            item = dict(item)
+            item["folder"] = target
+            item["folder_name"] = _basename(target)
+            results.append(item)
+    results.sort(key=lambda i: -i.get("score", 0))
+    return JSONResponse({"query": query, "results": results[:60],
+                         "folders": [_basename(t) for t in targets if t]})
+
+
+@app.get("/search", response_class=HTMLResponse)
+def search_page(q: str = "", folder: str = "") -> str:
+    """Search the folder's index. Results are files, with their metadata."""
+    cfg = _cfg()
+    query = str(q or "").strip()
+    fq = quote(folder)
+    scope = folder or ""
+    if not scope:
+        scope = watchlist.folders(cfg)[0] if watchlist.folders(cfg) else ""
+    results: list[dict] = []
+    if query and scope:
+        results = index_db.search(scope, query, limit=40)
+    rows = ""
+    for item in results:
+        tags = "".join(f'<span class="chip">{escape_attr(t)}</span>' for t in item.get("tags", [])[:6])
+        fields = item.get("fields", {})
+        facts = "".join(f"<dt>{escape_attr(k)}</dt><dd>{escape_attr(str(v))}</dd>"
+                        for k, v in fields.items() if v)
+        rows += f"""<div class="card fadein"><div class="row">
+<span class="icon">{icon('file', 20)}</span>
+<div style="flex:1;min-width:0">
+<p class="mono">{escape_attr(item['path'])}</p>
+<p class="muted">{escape_attr(item.get('description', ''))}</p>
+<div class="row">{tags}{f'<span class="chip pill-suggest">{escape_attr(item.get("doc_type", "document"))}</span>'}</div>
+<dl class="facts">{facts}</dl>
+</div>
+<div class="row">
+<a class="btn" href="/files?folder={fq}">Open</a>
+<button type="button" class="btn btn-ghost" onclick="readFile({scope!r}, {item['path']!r})">Read</button>
+<button type="button" class="btn btn-ghost" onclick="openFile({scope!r}, {item['path']!r})">Open in app</button>
+<button type="button" class="btn btn-ghost" onclick="askAbout({scope!r}, {item['path']!r})">Ask about it</button>
+</div></div></div>"""
+    if not query:
+        body = empty_state("search", "Search the index",
+                           "Charta keeps a metadata index of every file it has read — "
+                           "type a word, a tag, a vendor or an amount.",
+                           f'<div class="row"><input id="q" type="text" placeholder="sponsorship 2026" '
+                           f'aria-label="Search" onkeydown="if(event.key===\'Enter\')'
+                           f'location.href=\'/search?folder={fq}&q=\'+encodeURIComponent(this.value)">'
+                           f'<button class="btn btn-primary" onclick="location.href='
+                           f"'/search?folder={fq}&q='+encodeURIComponent(document.getElementById('q').value)\">"
+                           f'<span class="icon">{icon("search", 16)}</span> Search</button></div>')
+    elif not results:
+        body = empty_state("empty", "Nothing found",
+                           f"No file in {scope} matches that. Try a vendor, a year or an amount.")
+    else:
+        body = f'<div class="stack">{rows}</div>'
+    index_note = ""
+    if scope:
+        st = index_db.stats(scope)
+        index_note = (f'<span class="section-note">Index: {st["files"]} file(s), '
+                      f'{st["chunks"]} chunk(s)</span>')
+    inner = f"""{page_head("Search", "Find files by name, tag, description or content.",
+                          f'<span class="chip">{_basename(scope) if scope else "no folder"}</span>')}
+<div class="row"><input id="q" type="text" placeholder="sponsorship 2026" aria-label="Search" value="{escape_attr(query)}"
+ onkeydown="if(event.key==='Enter')location.href='/search?folder={fq}&q='+encodeURIComponent(this.value)">
+<button class="btn btn-primary" onclick="location.href='/search?folder={fq}&q='+encodeURIComponent(document.getElementById('q').value)">
+<span class="icon">{icon("search", 16)}</span> Search</button></div>
+{index_note}
+{body}
+<div id="reader"></div>"""
+    return shell("search", folder, inner)
+
+
+@app.post("/api/file/open")
+async def api_file_open(folder: str, req: Request) -> JSONResponse:
+    """Open a file with the system's default app (PDF viewer, editor…)."""
+    bad = _guard(folder)
+    if bad:
+        return bad
+    body = await req.json()
+    try:
+        target = tools.resolve(folder, str(body.get("path", "")))
+    except tools.ToolError as e:
+        return JSONResponse({"error": "tool-error", "message": str(e)}, status_code=400)
+    if not tools.open_in_system(target):
+        return JSONResponse({"error": "could-not-open",
+                             "message": "Could not open that file here."}, status_code=500)
+    return JSONResponse({"opened": str(target.name)})
+
+
+@app.post("/api/file/reveal")
+async def api_file_reveal(folder: str, req: Request) -> JSONResponse:
+    """Show a file in Explorer / the file manager."""
+    bad = _guard(folder)
+    if bad:
+        return bad
+    body = await req.json()
+    try:
+        target = tools.resolve(folder, str(body.get("path", "")))
+    except tools.ToolError as e:
+        return JSONResponse({"error": "tool-error", "message": str(e)}, status_code=400)
+    if not tools.reveal_in_file_manager(target):
+        return JSONResponse({"error": "could-not-open",
+                             "message": "Could not show that file."}, status_code=500)
+    return JSONResponse({"revealed": str(target.name)})
+
+
 @app.get("/overview", response_class=HTMLResponse)
 def overview(folder: str = "") -> str:
     ch, mode = _page(folder, "overview")
@@ -875,7 +1012,7 @@ def gaps(folder: str = "") -> str:
 
 
 @app.get("/ask", response_class=HTMLResponse)
-def ask_page(folder: str = "") -> str:
+def ask_page(folder: str = "", q: str = "") -> str:
     ch, mode = _page(folder, "ask")
     fq = quote(folder)
     cfg = _cfg()
@@ -899,13 +1036,17 @@ def ask_page(folder: str = "") -> str:
                   + ([f"What about {ch.expected[0]}?"] if ch and ch.expected else [])))
     inner = f"""{page_head("Ask", f"About {_basename(folder)} — answers cite file and page.",
                           f'<span class="chip">{cfg.llm_provider} · {cfg.generation_model}</span>')}
+<div id="steps" class="steps-wrap" aria-live="polite"></div>
 <div class="chatlog" id="log" role="log" aria-live="polite">
 <div class="msg ai">Ask anything about this folder — I quote the file and page I used, and I won't invent an answer.</div></div>
-<div class="row"><input id="q" type="text" aria-label="Your question" placeholder="e.g. What electricity bills do we have for March?">
+<div class="row"><input id="q" type="text" aria-label="Your question" placeholder="e.g. What electricity bills do we have for March?" value="{escape_attr(q)}">
 <button type="button" class="btn btn-icon" onclick="toggleMic('q')" aria-label="Ask by voice">{icon("mic", 18)}</button>
 <button type="button" class="btn btn-primary" onclick="askFolder()"><span class="icon">{icon("arrow-right", 16)}</span> Ask</button></div>
 <div class="row" style="margin-top:var(--s3)">{starters}</div>
 <div id="ans"></div>"""
+    if q.strip():
+        inner += (f'<script>window.addEventListener("load",()=>askFolder('
+                  f'{q.strip()!r}));</script>')
     return shell("ask", folder, inner, mode)
 
 
@@ -1240,6 +1381,7 @@ def api_outputs(folder: str) -> JSONResponse:
 
 @app.post("/api/ask")
 async def api_ask(req: Request, folder: str = "") -> JSONResponse:
+    """Start a question. The work is a job the UI can watch step by step."""
     body = await req.json()
     question = str(body.get("q", "")).strip()
     if not folder.strip():
@@ -1250,27 +1392,100 @@ async def api_ask(req: Request, folder: str = "") -> JSONResponse:
     if not question:
         return JSONResponse({"error": "no-question", "message": "Type a question.",
                              "answer": "Type a question.", "citations": []}, status_code=400)
+    job = Job(id=str(uuid.uuid4()), kind="ask")
+    job.step("work", f"Reading the index of {_basename(folder)}…")
+    with _jobs_lock:
+        _jobs[job.id] = job
+        if len(_jobs) > 40:
+            for old in list(_jobs)[:-40]:
+                _jobs.pop(old, None)
+    thread = threading.Thread(target=_run_ask, args=(job, folder, question), daemon=True)
+    thread.start()
+    return JSONResponse(job.as_dict())
+
+
+@app.get("/api/ask/status")
+def api_ask_status(job: str = "") -> JSONResponse:
+    """The live state of a question: the steps so far and the answer."""
+    current = _job(job)
+    if current is None:
+        return JSONResponse({"error": "unknown-job"}, status_code=404)
+    return JSONResponse(current.as_dict())
+
+
+def _run_ask(job: Job, folder: str, question: str) -> None:
+    """Do the work, recording every step so the UI can show it."""
     cfg = _cfg()
     client = LLMClient(cfg)
-    idx, cached, stats = _ask_index(folder, cfg, client)
-    if not idx:
-        return JSONResponse({"answer": "That folder has nothing indexed yet — "
-                                      "scan it first and I will have something to read.",
-                             "citations": [], "files": 0,
-                             "provider": cfg.llm_provider, "model": cfg.generation_model})
-    ans = answer_query(question, idx, client)
-    return JSONResponse({"answer": ans.text,
-                         "citations": [{"file": c.file, "page": c.page} for c in ans.citations],
-                         "folder": folder, "files": len(idx), "cached": cached,
-                         "found": stats.get("files", len(idx)),
-                         "truncated": bool(stats.get("truncated")),
-                         "provider": cfg.llm_provider, "model": cfg.generation_model})
+    try:
+        idx, cached, stats = _ask_index(folder, cfg, client)
+        source = stats.get("source", "index")
+        if cached:
+            job.step("done", "Used the index (already read).")
+        elif source == "index":
+            job.step("done", f"Read {len(idx)} chunk(s) from the index.")
+        else:
+            job.step("done", f"Read {len(idx)} chunk(s) from {stats.get('files', 0)} file(s).")
+        if not idx:
+            job.state = "done"
+            job.answer = ("That folder has nothing indexed yet — scan it first and "
+                          "I will have something to read.")
+            job.extra.update({"files": 0, "provider": cfg.llm_provider,
+                              "model": cfg.generation_model})
+            return
+        steps: list[dict] = []
+        job.step("work", f"Looking for “{question}”…")
+        ans = answer_query(question, idx, client, steps=steps)
+        for s in steps:
+            job.step(s["kind"], s["text"])
+        job.answer = ans.text
+        job.citations = [{"file": c.file, "page": c.page} for c in ans.citations]
+        job.state = "done"
+        job.extra.update({"files": len(idx), "provider": cfg.llm_provider,
+                          "model": cfg.generation_model, "cached": cached})
+    except Exception as e:  # noqa: BLE001 — the UI shows the reason
+        job.state = "failed"
+        job.error = str(e)
+        job.step("warn", f"Stopped: {e}")
 
 
 # The Ask index per folder, rebuilt only when the folder's files change. The
 # first question pays for the reading; every later one is instant.
 _ask_cache: dict[str, tuple[str, list[dict], dict]] = {}
 _ask_lock = threading.Lock()
+
+
+@dataclass
+class Job:
+    """A piece of work the UI can watch: what is happening, step by step."""
+
+    id: str
+    kind: str = "ask"
+    state: str = "running"
+    steps: list[dict] = field(default_factory=list)
+    answer: str = ""
+    citations: list[dict] = field(default_factory=list)
+    error: str = ""
+    extra: dict = field(default_factory=dict)
+
+    def step(self, kind: str, text: str) -> None:
+        self.steps.append({"kind": kind, "text": text,
+                           "at": datetime.datetime.now().strftime("%H:%M:%S")})
+
+    def as_dict(self) -> dict:
+        return {"job": self.id, "kind": self.kind, "state": self.state,
+                "steps": list(self.steps), "answer": self.answer,
+                "citations": list(self.citations), "error": self.error,
+                **self.extra}
+
+
+_jobs: dict[str, Job] = {}
+_jobs_lock = threading.Lock()
+
+
+def _job(job_id: str) -> Job | None:
+    with _jobs_lock:
+        return _jobs.get(job_id)
 
 
 def _ask_index(folder: str, cfg: AppConfig, client: LLMClient) -> tuple[list[dict], bool, dict]:

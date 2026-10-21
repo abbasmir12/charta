@@ -258,11 +258,15 @@ def build_index(folder: str | pathlib.Path,
                 vision: VisionFn | None = None,
                 max_files: int = 200,
                 budget_seconds: float = 45.0,
-                stats: dict | None = None) -> list[dict]:
-    """Chunk every readable file and attach the signals used for ranking.
+                stats: dict | None = None,
+                prefer_index: bool = True) -> list[dict]:
+    """The retrieval index for a folder.
 
-    An empty folder is refused: ``Path("")`` means "the current directory",
-    which would silently index whatever the app happens to be sitting in.
+    The folder's own index (``.charta/index.db``) is used when it is up to
+    date — that is the point of it: the files were read once, and every
+    question afterwards works from their metadata and text instead of reading
+    the folder again. When the index has nothing, the files are read now (and
+    the index is filled in for next time).
 
     ``max_files`` and ``budget_seconds`` bound the work: a folder with
     thousands of files (or a big pile of images, each one a slow vision call)
@@ -274,6 +278,14 @@ def build_index(folder: str | pathlib.Path,
     folder = pathlib.Path(folder)
     if not folder.is_dir():
         return []
+    if prefer_index:
+        cached = index_from_db(folder, exclude_sensitive=exclude_sensitive)
+        if cached:
+            if stats is not None:
+                stats.update({"files": len({d["file"] for d in cached}),
+                              "indexed": len(cached), "truncated": False,
+                              "seconds": 0.0, "source": "index"})
+            return cached
     started = time.monotonic()
     index: list[dict] = []
     seen = 0
@@ -294,22 +306,66 @@ def build_index(folder: str | pathlib.Path,
         if exclude_sensitive and sens_mod.detect(res.text).sensitive:
             continue
         rel = str(p.relative_to(folder))
+        _remember(folder, rel, res, chunk_text(res.text), sensitive=False)
         for j, chunk in enumerate(chunk_text(res.text)):
-            desc = describe_file(rel, chunk)
-            months, years = _date_parts(chunk + " " + rel)
-            index.append({
-                "file": rel, "page": j + 1, "text": chunk, "desc": desc,
-                "tokens": tokens(f"{rel} {desc} {chunk}"),
-                "months": months, "years": years,
-                "dates": _dates(chunk), "amounts": _amounts(chunk),
-                "numbers": set(re.findall(r"\b\d+\b", chunk)),
-                "types": _doc_types(f"{rel} {chunk}"),
-            })
+            index.append(_doc(rel, j + 1, chunk))
     if stats is not None:
         stats.update({"files": seen, "indexed": len(index),
                       "truncated": seen > len(index),
-                      "seconds": round(time.monotonic() - started, 2)})
+                      "seconds": round(time.monotonic() - started, 2),
+                      "source": "files"})
     return index
+
+
+def _remember(folder: pathlib.Path, rel: str, res: object, chunks: list[str],
+              sensitive: bool = False) -> None:
+    """Keep what we just read in the folder's index (so we never read it twice)."""
+    try:
+        from . import index_db
+        from .meta import extract_metadata  # local import: meta imports this module
+
+        text = getattr(res, "text", "") or ""
+        metadata = extract_metadata(rel, text, pages=int(getattr(res, "pages", 0) or 0),
+                                   method=str(getattr(res, "method", "") or ""))
+        index_db.upsert(folder, rel, text, metadata,
+                        pages=int(getattr(res, "pages", 0) or 0),
+                        method=str(getattr(res, "method", "") or ""),
+                        sensitive=sensitive, chunks=chunks)
+    except Exception:  # noqa: BLE001 — the index is a convenience, never a blocker
+        return
+
+
+def _doc(rel: str, page: int, chunk: str) -> dict:
+    """One searchable document (a chunk of a file with its signals)."""
+    desc = describe_file(rel, chunk)
+    months, years = _date_parts(chunk + " " + rel)
+    return {
+        "file": rel, "page": page, "text": chunk, "desc": desc,
+        "tokens": tokens(f"{rel} {desc} {chunk}"),
+        "months": months, "years": years,
+        "dates": _dates(chunk), "amounts": _amounts(chunk),
+        "numbers": set(re.findall(r"\b\d+\b", chunk)),
+        "types": _doc_types(f"{rel} {chunk}"),
+    }
+
+
+def index_from_db(folder: str | pathlib.Path, exclude_sensitive: bool = True) -> list[dict]:
+    """The retrieval index built from the folder's stored chunks (no reading)."""
+    from . import index_db  # local import: index_db must not depend on this module
+
+    try:
+        rows = index_db.chunks(folder)
+        meta = index_db.file_meta(folder)
+    except Exception:  # noqa: BLE001 — a missing or broken index is not fatal
+        return []
+    if not rows:
+        return []
+    out: list[dict] = []
+    for rel, page, text in rows:
+        if exclude_sensitive and meta.get(rel, {}).get("sensitive"):
+            continue
+        out.append(_doc(rel, page, text))
+    return out
 
 
 def index_signature(folder: str | pathlib.Path) -> str:
@@ -366,11 +422,22 @@ def _score(intent: Intent, doc: dict, df: Counter, n: int, avgdl: float) -> floa
 
 
 def answer_query(query: str, index: list[dict], client: LLMClient | None = None,
-                 top_k: int = 3) -> Answer:
+                 top_k: int = 3, steps: list[dict] | None = None) -> Answer:
+    """Answer a question from the index.
+
+    ``steps`` collects what happened (ranked, model called, answered) so the UI
+    can show the work instead of a spinner.
+    """
+    def note(kind: str, text: str) -> None:
+        if steps is not None:
+            steps.append({"kind": kind, "text": text})
+
     if not index:
+        note("warn", "This folder has nothing indexed yet.")
         return Answer("I couldn't find that in this folder — no indexed files yet.", [], False)
     intent = parse_intent(query)
     if not intent.expanded:
+        note("warn", "Nothing in the question to look for.")
         return Answer("I couldn't find that in this folder — nothing relevant matched.", [], False)
 
     df: Counter = Counter()
@@ -381,24 +448,32 @@ def answer_query(query: str, index: list[dict], client: LLMClient | None = None,
                     key=lambda pair: pair[0], reverse=True)
     best_score, best = ranked[0]
     if best_score <= 0:
+        note("warn", "No file in the index matched those words.")
         return Answer("I couldn't find that in this folder — nothing relevant matched.", [], False)
 
     wanted = set(intent.terms)
     coverage = len(wanted & set(best["tokens"])) / max(1, len(wanted))
     if coverage < 0.25 and not (intent.months or intent.amounts or intent.numbers):
+        note("warn", "The closest file does not really match the question.")
         return Answer("I couldn't find that in this folder — nothing relevant matched.", [], False)
 
     top = [doc for _, doc in ranked[:top_k]]
     cites = [Citation(r["file"], r["page"], r["text"][:300]) for r in top]
+    note("work", f"Matched {len(top)} file(s): "
+                + ", ".join(sorted({c.file for c in cites})))
     context = "\n\n".join(
         f"[{c.file} p{c.page}] ({d['desc']})\n{c.excerpt}" for c, d in zip(cites, top))
     if client:
+        note("model", f"Asking {client.cfg.llm_provider}/{client.cfg.generation_model}…")
         res = client.generate(
             "Answer ONLY from this folder context. Cite [file pN]. Keep exact "
             "dates and amounts. If the context does not contain the answer, say so.\n"
             f"Q: {query}\nContext:\n{context}", system="Be concise and factual.")
         if res.ok and res.text.strip():
+            note("done", "Answer ready.")
             return Answer(res.text.strip(), cites, True)
+        note("warn", "The model did not answer — showing the matched text instead.")
     best = top[0]
+    note("done", "Answer ready (from the index).")
     return Answer(f"Based on {best['file']} (p{best['page']}) — {best['desc']}: "
                   f"{best['text'][:500]}", cites, True)

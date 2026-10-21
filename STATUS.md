@@ -41,6 +41,25 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **a metadata index, a real search, and a work timeline.** Every
+  file Charta reads is now described once and kept in the folder's own SQLite
+  index (`.charta/index.db`): description, document type, tags, the fields
+  found in it (date, vendor, amount, currency, category), and the extracted
+  text in chunks. Ask works from that index instead of re-reading the folder
+  (and fills it in when it has to), so the AI is handed the metadata and text
+  of the few files that match instead of the whole folder. New **Search** page
+  and `/api/search`: find files by name, tag, description, field or content,
+  with clickable results — Read in place, Open in the system app, Ask about
+  that file, or show it in Explorer. The **Ask** screen now shows a work
+  timeline (read the index → matched N files → asking provider/model → answer)
+  as a job the UI polls, with the steps appearing as they happen. Files:
+  `charta/core/index_db.py`, `charta/core/meta.py`, `charta/core/ask.py`,
+  `charta/core/pipeline.py`, `charta/core/tools.py`, `charta/web/app.py`,
+  `charta/web/static/app.js`, `charta/web/static/app.css`, `desktop/main.js`,
+  `DESIGN.md`, `README.md`, `tests/test_index_db.py`, `tests/test_web_ui.py`.
+  Verified: `pytest -q` 202 passed; a folder indexed through Ask is immediately
+  searchable, and the work timeline was checked against a live server.
+
 - 2026-10-21: **Ask gives an answer again, and says what it did.** Asking
   about a big folder (here: the repository itself) meant reading every file —
   images included, each one a slow vision call — so the request took minutes

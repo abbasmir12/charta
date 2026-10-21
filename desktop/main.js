@@ -26,7 +26,7 @@ const CHROME = {
 };
 const chromeFor = (dark) => (dark ? CHROME.dark : CHROME.light);
 const ROUTES = ['/', '/folders', '/overview', '/files', '/review', '/outputs', '/gaps',
-  '/ask', '/activity', '/history', '/settings', '/styleguide'];
+  '/ask', '/search', '/activity', '/history', '/settings', '/styleguide'];
 
 const DEBUG = process.argv.includes('--debug');const SMOKE = process.argv.includes('--smoke');
 // `--shots` alone writes to docs/screenshots; `--shots=<dir>` chooses another.

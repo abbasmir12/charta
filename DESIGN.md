@@ -54,7 +54,7 @@
   `.section-note` + optional `.section-actions`). A green `--accent-soft` box
   on everything is banned.
 - **Grouped navigation rail.** Sidebar groups: `Work` (Folders, Overview, Files,
-  Review, Outputs, Gaps, Ask), `Records` (Activity, History), then a
+  Review, Outputs, Gaps, Ask), `Records` (Search, Activity, History), then a
   `rail-foot` (Settings, New charter). Group labels are sentence-case 12px muted
   — never tracked ALL-CAPS. Active item = filled `--raised` row + accent icon.
 - **One folder control.** The watched folder is switched from the toolbar
@@ -117,8 +117,16 @@
 4. Outputs: tabs; receipts grid (sort/filter/export), notes, flashcards,
    data table.
 5. Gaps: ruled checklist (found / missing + note), progress ring.
-6. Ask: chat + mic, streaming, citation chips, calm "couldn't find" state.
+6. Ask: chat + mic, citation chips, calm "couldn't find" state, and a
+   **work timeline** above the chat: every step the agent took (read the
+   index, matched N files, asked provider/model) as a ruled list with a
+   pulsing dot while it runs.
 7. Activity: ruled log (`what / file / why / when`), Undo per row.
+7c. Search: the folder's metadata index — a search field, then one card per
+   match with the file path, its one-line description, its tags, and the
+   fields found in it (date, vendor, amount). Each result is clickable:
+   Read (in the app), Open (in the system's app), Ask about it, or show it in
+   Explorer.
 7b. History: the folder's own git trail (`.charta/git`) — one row per commit
    with date, short sha, message and the files it touched. Every index, move,
    edit, trash and rebuild is a commit, so the user can see exactly what

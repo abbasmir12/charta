@@ -188,7 +188,9 @@ def run_tool(name: str, args: dict, folder: str | pathlib.Path) -> str:
             return "read_file needs a path."
         text = _read_from_index(folder, path)
         if text is None:
-            return f"read_file: '{path}' is not in the index."
+            return (f"read_file: '{path}' has no text in the index (an image or a "
+                    "format without extracted text). Use search_index to find a "
+                    "file with real text, or answer from the catalogue.")
         return f"read_file('{path}') →\n{text}"
     if name == "list_files":
         return "list_files() →\n" + catalogue(folder)

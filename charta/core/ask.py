@@ -421,6 +421,21 @@ def _score(intent: Intent, doc: dict, df: Counter, n: int, avgdl: float) -> floa
     return score
 
 
+def _nothing_found_note(index: list[dict], query: str) -> str:
+    """A "not found" answer that still tells the user what IS there.
+
+    The words in the question matched nothing, but the folder is not empty —
+    so name what the folder contains instead of leaving a bare dead end.
+    """
+    names = list(dict.fromkeys(d["file"] for d in index))[:8]
+    listed = ", ".join(f"`{name}`" for name in names)
+    more = f" …and {len(set(d['file'] for d in index)) - len(names)} more" \
+        if len(set(d["file"] for d in index)) > len(names) else ""
+    return (f"I found nothing matching “{query}” in this folder. "
+            f"What it does contain:\n{listed}{more}.\n"
+            "Ask about one of those — a name, a year or a vendor from them.")
+
+
 def answer_query(query: str, index: list[dict], client: LLMClient | None = None,
                  top_k: int = 3, steps: list[dict] | None = None) -> Answer:
     """Answer a question from the index.
@@ -434,7 +449,12 @@ def answer_query(query: str, index: list[dict], client: LLMClient | None = None,
 
     if not index:
         note("warn", "This folder has nothing indexed yet.")
-        return Answer("I couldn't find that in this folder — no indexed files yet.", [], False)
+        return Answer("I couldn't find that in this folder — no indexed files yet. "
+                      "Press Scan now and try again.", [], False)
+    intent = parse_intent(query)
+    if not intent.expanded:
+        note("warn", "Nothing in the question to look for.")
+        return Answer(_nothing_found_note(index, query), [], False)
     intent = parse_intent(query)
     if not intent.expanded:
         note("warn", "Nothing in the question to look for.")
@@ -449,13 +469,13 @@ def answer_query(query: str, index: list[dict], client: LLMClient | None = None,
     best_score, best = ranked[0]
     if best_score <= 0:
         note("warn", "No file in the index matched those words.")
-        return Answer("I couldn't find that in this folder — nothing relevant matched.", [], False)
+        return Answer(_nothing_found_note(index, query), [], False)
 
     wanted = set(intent.terms)
     coverage = len(wanted & set(best["tokens"])) / max(1, len(wanted))
     if coverage < 0.25 and not (intent.months or intent.amounts or intent.numbers):
         note("warn", "The closest file does not really match the question.")
-        return Answer("I couldn't find that in this folder — nothing relevant matched.", [], False)
+        return Answer(_nothing_found_note(index, query), [], False)
 
     top = [doc for _, doc in ranked[:top_k]]
     cites = [Citation(r["file"], r["page"], r["text"][:300]) for r in top]

@@ -41,6 +41,18 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **"not found" answers became useful, and blind image reads
+  stopped.** The user's log showed Ask working end to end (the model calls
+  list_files and read_file; the job finishes done) — but (a) a question like
+  "hi" that matches nothing returned a bare dead end, and (b) the agent read
+  screenshot PNGs and got nothing back, then still went on. Now a no-match
+  answer lists what the folder DOES contain (up to 8 file names) and points
+  at them, and read_file on an unindexed path explains that there is no text
+  and to use search_index or the catalogue instead. Files: `charta/core/
+  ask.py`, `charta/core/agent.py`, `tests/test_agent.py`,
+  `tests/test_features.py`. Verified: `pytest -q` 218 passed; the user's own
+  `charta logs` showed the tool loop completing on their Windows machine.
+
 - 2026-10-21: **THE "instant No answer" bug, actually found.** The per-folder
   ask box on the Folders dashboard (`askIn` in app.js) still read the Ask API
   synchronously after Ask became a job API: it got a job object, found no

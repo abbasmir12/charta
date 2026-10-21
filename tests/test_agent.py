@@ -67,7 +67,7 @@ def test_the_read_tool_returns_the_stored_text(tmp_path):
     folder = _folder(tmp_path)
     out = run_tool("read_file", {"path": "sponsorship_2026.txt"}, folder)
     assert "5000 EUR" in out
-    assert "not in the index" in run_tool("read_file", {"path": "nope.txt"}, folder)
+    assert "no text in the index" in run_tool("read_file", {"path": "nope.txt"}, folder)
 
 
 def test_the_model_can_call_a_tool_and_then_answer(fake_provider, tmp_path):
@@ -124,3 +124,26 @@ def test_a_model_that_only_calls_tools_still_ends_with_an_answer(fake_provider, 
     # The loop ends with a request for the final answer; the raw tool call is
     # never handed to the user as an answer.
     assert not result.answer.strip().startswith("{")
+
+
+def test_reading_an_unknown_file_says_so_and_points_elsewhere(tmp_path):
+    """A path that is not indexed must not return empty text: the model is
+    told why, so it stops guessing and uses search_index or the catalogue."""
+    folder = _folder(tmp_path)
+    out = run_tool("read_file", {"path": "photo.png"}, folder)
+    assert "no text in the index" in out
+    assert "search_index" in out
+
+
+def test_a_question_with_no_match_names_what_the_folder_has(tmp_path, fake_provider):
+    """'hi' matches nothing, but the folder still lists what it contains."""
+    from charta.core.ask import answer_query
+
+    folder = _folder(tmp_path)
+    from charta.core.ask import _doc
+    index = [_doc("sponsorship_2026.txt", 1, "x")]
+    empty = answer_query("hi", [], LLMClient(_cfg(fake_provider)))
+    assert "no indexed files" in empty.text
+    miss = answer_query("hi", index, LLMClient(_cfg(fake_provider)))
+    assert "hi" in miss.text
+    assert "sponsorship_2026.txt" in miss.text

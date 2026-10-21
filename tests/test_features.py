@@ -40,7 +40,7 @@ def test_ask_citations_and_refusal(tmp_path):
     ans = answer_query("photosynthesis", idx, None)
     assert ans.found and ans.citations and "lecture_01" in ans.citations[0].file
     no = answer_query("quantum gravity zebra", idx, None)
-    assert not no.found and "couldn't find" in no.text
+    assert not no.found and "found nothing matching" in no.text and "lecture_01.txt" in no.text
 
 
 def test_ask_uses_dates_amounts_and_filename(tmp_path):

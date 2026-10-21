@@ -363,3 +363,12 @@ def test_a_question_always_produces_an_answer(client, tmp_path):
     body = _wait_job(client, job["job"])
     assert body["state"] == "done"
     assert body["answer"].strip()
+
+
+def test_the_page_carries_a_build_stamp_and_the_server_reports_its_own(client):
+    """A window left open across an update must notice and offer a reload."""
+    page = client.get("/ask", params={"folder": ""}).text
+    assert "__CHARTA_BUILD__" in page
+    version = client.get("/api/version").json()
+    assert version["build"] and version["started"]
+    assert version["build"] in page

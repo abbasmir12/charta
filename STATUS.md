@@ -41,6 +41,16 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-21: **a stale window now says so.** A window opened before an
+  update keeps running yesterday's JavaScript against today's API — the Ask
+  answer arrives as a job, the old page expects a plain answer, and it shows
+  "No answer." instantly. Every page now carries a build stamp and compares
+  it with `/api/version`; when the server has moved on, the page says
+  "Charta was updated while this window was open — reload" with a Reload
+  button. The Electron tray has a "Reload window" item for the same reason.
+  Files: `charta/web/app.py`, `charta/web/static/app.js`, `desktop/main.js`,
+  `tests/test_web_ui.py`. Verified: `pytest -q` 212 passed.
+
 - 2026-10-21: **no more "No answer."** A model that has learned to call tools
   sometimes answers the *final* prompt with a tool call too — Charta was
   showing that JSON as if it were the answer, and a model that only ever calls

@@ -329,6 +329,30 @@ async function watchJob(job,onDone){
   await new Promise(r=>setTimeout(r,350));
  }
 }
+// --- keep the page in step with the server --------------------------------
+// The backend can be updated while this window is open (a `git pull`, a
+// restart). The page then runs yesterday's JavaScript against today's API,
+// which looks like a mysterious failure. So: compare the build stamp, and
+// offer a reload when they differ.
+const CHARTA_BUILD=window.__CHARTA_BUILD__||'';
+async function checkBuild(){
+ if(!CHARTA_BUILD)return;
+ let v;
+ try{v=await api('/api/version');}catch(e){return;}
+ if(v&&v.build&&v.build!==CHARTA_BUILD){
+  const bar=document.getElementById('updateBar');
+  if(bar&&!bar.dataset.shown){
+   bar.dataset.shown='1';
+   bar.hidden=false;
+   bar.innerHTML='<span class="icon">'+icon('alert',15)+'</span> Charta was updated while this '
+    +'window was open — reload to get the new version.'
+    +'<button class="btn btn-primary" onclick="location.reload()">Reload</button>';
+  }
+ }
+}
+setInterval(checkBuild,15000);
+window.addEventListener('load',()=>{checkBuild();});
+
 window.askFolder=async(question)=>{
  const input=document.getElementById('q');
  const q=typeof question==='string'&&question?question:(input.value||'').trim();

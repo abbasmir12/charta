@@ -171,6 +171,9 @@ LOCAL_PROVIDERS = ("ollama", "lmstudio", "llamacpp", "vllm")
 # When this backend started — the Settings page shows it, so a window that is
 # running older code (a leftover instance) is obvious at a glance.
 _STARTED = datetime.datetime.now().isoformat(timespec="seconds")
+# A stamp the page can compare with the server: if they differ, the server was
+# updated while this window was open, and the page asks to be reloaded.
+BUILD = _STARTED
 
 
 def icon(name: str, size: int = 18) -> str:
@@ -229,8 +232,9 @@ def shell(page: str, folder: str, inner: str, mode: str = "suggest", label: str 
 <meta name="color-scheme" content="light dark"><title>Charta — {page.title() if page else 'Setup'}</title>
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="stylesheet" href="/static/tokens.css"><link rel="stylesheet" href="/static/app.css">
-<script>window.__CHARTA_DEBUG__={"true" if _debug() else "false"};window.__ICONS__={icons.manifest()};</script></head>
+<script>window.__CHARTA_DEBUG__={"true" if _debug() else "false"};window.__CHARTA_BUILD__={BUILD!r};window.__ICONS__={icons.manifest()};</script></head>
 <body>
+<div id="updateBar" class="banner warn" hidden style="margin:var(--s3) var(--s5) 0"></div>
 <header class="appbar" id="appbar">
 <span class="brand"><span class="mark" aria-hidden="true">{icon("file", 13)}</span> Charta</span>
 <nav class="crumbs" aria-label="Breadcrumb">{folder_crumb}<span class="crumb-cur">{here}</span></nav>
@@ -1534,6 +1538,13 @@ def _ask_index(folder: str, cfg: AppConfig, client: LLMClient) -> tuple[list[dic
             for old in list(_ask_cache)[:-20]:
                 _ask_cache.pop(old, None)
     return index, False, stats
+
+
+@app.get("/api/version")
+def api_version() -> JSONResponse:
+    """Which build the server is running (the page compares it with its own)."""
+    return JSONResponse({"build": BUILD, "started": _STARTED,
+                         "version": "0.1.0"})
 
 
 @app.get("/api/health")

@@ -210,6 +210,7 @@ async function trayMenu(url) {
   return Menu.buildFromTemplate([
     { label: 'Open Charta', click: () => focusOrCreate(url) },
     { label: 'Watched folders', click: () => navigate('/folders') },
+    { label: 'Reload window', click: () => { if (win) win.reload(); } },
     { label: 'Review proposals', click: () => navigate('/review') },
     { label: 'Ask the folder', click: () => navigate('/ask') },
     { type: 'separator' },

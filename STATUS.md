@@ -424,9 +424,10 @@ pass and a recorded before/after demo.
 
 ## Next Up
 
-1. Windows visual pass: Explorer menu, tray, Mica/title bar, close-to-tray.
-2. Record a 60–90s before/after demo (`charta demo` → sorted folder + output).
-3. Live-model pass on Gemma via Ollama for classification quality and vision.
+1. (user) Try the new Ask on Windows: streamed work inline, markdown answer,
+   gaps and rename proposals appearing after a question.
+2. Windows visual pass: Explorer menu, tray, Mica/title bar, close-to-tray.
+3. Record a 60–90s before/after demo (`charta demo` → sorted folder + output).
 
 ## Blockers & Open Questions
 

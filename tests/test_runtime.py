@@ -91,7 +91,7 @@ def test_output_rows_endpoint_reports_columns_and_rows(tmp_path):
     client = TestClient(app)
     body = client.get("/api/outputs/rows", params={"folder": str(tmp_path), "kind": "receipts"}).json()
     assert "source_file" in body["columns"] and body["rows"]
-    assert body["path"].endswith("receipts.csv")
+    assert body["file"] == "receipts.csv"
     bad = client.get("/api/outputs/rows", params={"folder": str(tmp_path), "kind": "nope"})
     assert bad.status_code == 400
 

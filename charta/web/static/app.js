@@ -101,37 +101,26 @@ window.setMode=async(f,mode)=>{
  }catch(err){toast('Could not change the mode for that folder.',false);}
 };
 // Ask a question about one specific folder from the Folders page.
-// Ask is a job (it can take a while), so this box polls it the same way the
-// Ask page does, and shows the reason when the answer never arrives.
+// The same streamed flow as the Ask page, but the work block and the answer
+// render inside this folder's own box.
 window.askIn=async(f,id,q)=>{
  const box=document.getElementById(id);
  const input=document.getElementById(id+'-input');
  const question=(q||(input?input.value:'')).trim();
  if(!box||!question)return;
  if(input)input.value='';
- box.innerHTML='<div class="msg ai"><div>reading the folder…</div></div>';
+ // Borrow the Ask page machinery by pointing its "log" at this box.
+ const realLog=document.getElementById('log');
+ if(realLog)realLog.id='log-off';
+ box.id='log';
  try{
-  const j=await post('/api/ask?folder='+encodeURIComponent(f),{q:question});
-  if(j.error){box.innerHTML='<div class="msg ai">'+escHtml(j.message||'Could not answer that.')+'</div>';return;}
-  await watchJob(j.job,(done)=>{
-   window.__lastAsk=done;
-   if(done.state==='failed'){
-    box.innerHTML='<div class="msg ai"><div><strong>I stopped:</strong> '
-     +escHtml(done.error||'unknown reason')+'</div>'
-     +(done.steps&&done.steps.length
-       ?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">Last step: '
-        +escHtml(done.steps[done.steps.length-1].text)+'</p>':'')
-     +'</div>';
-    return;
-   }
-   const cites=(done.citations||[]).map(c=>'<span class="chip cite mono">'+escHtml(c.file)+' p'+c.page+'</span>').join(' ');
-   const meta=done.files?(' · '+done.files+' file(s)'+(done.cached?' (already read)':'')+' · '+escHtml(done.model||'')):'';
-   box.innerHTML='<div class="msg ai"><div>'+escHtml((done.answer||'').trim()
-     ||'No answer came back — open the Ask page for the full timeline.')+'</div>'
-    +(meta?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+meta+'</p>':'')+cites+'</div>';
-  });
- }catch(err){
-  box.innerHTML='<div class="msg ai">Something went wrong: '+escHtml((err&&err.message)||'unknown error')+'</div>';
+  await askOnce('','/api/ask?folder='+encodeURIComponent(f),question,f);
+ }finally{
+  box.id=id;
+  if(realLog)realLog.id='log';
+ }
+ if(!box.querySelector('.msg.ai')){
+  box.innerHTML='<div class="msg ai">No answer came back — open the Ask page for the full timeline.</div>';
  }
 };
 // Open a file with the system's default app (PDF viewer, editor…).
@@ -309,60 +298,224 @@ window.createCharter=async()=>{
 };
 
 // --- ask the folder --------------------------------------------------------
-function renderAnswer(j){
+// The model's answer arrives as Markdown. Render it locally (no CDN): escape
+// everything first, then apply a small, known-safe set of patterns — plus
+// Charta touches: [file pN] citations become buttons, dates and amounts are
+// highlighted.
+function mdInline(t){
+ t=t.replace(/\[([^\[\]\n]+?)\s+p(\d+)\]/g,(m,f,p)=>
+  '<button class="chip cite mono" onclick="revealCite(\''+encodeURIComponent(f)+'\',\''+p+'\')">'
+  +escHtml(f)+' p'+p+'</button>');
+ t=t.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+ t=t.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g,'$1<em>$2</em>');
+ t=t.replace(/`([^`\n]+)`/g,'<code>$1</code>');
+ t=t.replace(/\b(20\d{2}-\d{2}-\d{2})\b/g,'<span class="hl-date">$1</span>');
+ t=t.replace(/(\d+([.,]\d+)?)\s?(EUR|USD|GBP|INR|€|\$|£|₹)\b/g,
+  '<span class="hl-amount">$1 $3</span>');
+ t=t.replace(/\b(https?:\/\/[^\s<)]+)/g,
+  m=>'<a href="'+m+'" target="_blank" rel="noopener noreferrer">'+m+'</a>');
+ return t;
+}
+function mdSplitRow(line){
+ return line.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+}
+function md(text){
+ text=(text||'').replace(/\r/g,'');
+ const fences=[];
+ text=text.replace(/```[\w+-]*\n?([\s\S]*?)```/g,(m,body)=>{
+  fences.push(body);return '\x00F'+(fences.length-1)+'\x00';});
+ const code=[];
+ text=text.replace(/`([^`\n]+)`/g,(m,body)=>{code.push(body);return '\x00C'+(code.length-1)+'\x00';});
+ text=escHtml(text);
+ const lines=text.split('\n');const out=[];let inList=false;
+ const flushList=()=>{if(inList){out.push('</ul>');inList=false;}};
+ for(let i=0;i<lines.length;i++){
+  const L=lines[i];
+  if(/^\s*\|.*\|\s*$/.test(L)&&i+1<lines.length&&/^\s*\|[\s:|-]+\|\s*$/.test(lines[i+1])){
+   flushList();
+   const head=mdSplitRow(L);i+=2;const body=[];
+   while(i<lines.length&&/^\s*\|.*\|\s*$/.test(lines[i])){body.push(mdSplitRow(lines[i]));i++;}
+   i--;
+   out.push('<div class="tblwrap"><table><thead><tr>'
+    +head.map(h=>'<th>'+mdInline(h)+'</th>').join('')+'</tr></thead><tbody>'
+    +body.map(r=>'<tr>'+r.map(c=>'<td>'+mdInline(c)+'</td>').join('')+'</tr>').join('')
+    +'</tbody></table></div>');
+   continue;
+  }
+  const h=L.match(/^\s*(#{1,4})\s+(.+)$/);
+  if(h){flushList();out.push('<h'+(h[1].length+2)+'>'+mdInline(h[2].replace(/\*+/g,''))+'</h'+(h[1].length+2)+'>');continue;}
+  if(/^\s*[-*]\s+/.test(L)){if(!inList){out.push('<ul>');inList=true;}out.push('<li>'+mdInline(L.replace(/^\s*[-*]\s+/,''))+'</li>');continue;}
+  if(/^\s*\d+\.\s+/.test(L)){if(!inList){out.push('<ul>');inList=true;}out.push('<li>'+mdInline(L.replace(/^\s*\d+\.\s+/,''))+'</li>');continue;}
+  flushList();
+  if(!L.trim()){continue;}
+  out.push('<p>'+mdInline(L)+'</p>');
+ }
+ flushList();
+ let html=out.join('\n');
+ // Restore code after escaping: the fence content was captured pre-escape.
+ html=html.replace(/\x00C(\d+)\x00/g,(m,i)=>'<code>'+code[+i]+'</code>');
+ html=html.replace(/\x00F(\d+)\x00/g,(m,i)=>'<pre class="mono">'+fences[+i]+'</pre>');
+ return html;
+}
+window.revealCite=(b64,p)=>{
+ const name=decodeURIComponent(b64);
+ toast('Opening '+name);
+ const f=(askOnce.f!==undefined&&askOnce.f)?askOnce.f:folder();
+ if(window.revealFile&&f)revealFile(f,name);
+};
+// The model's work, shown as it happens: a collapsible block inside the chat
+// where every tool call appears the moment the model makes it (streamed),
+// then collapses into a one-line summary above the answer.
+function makeWork(){
  const log=document.getElementById('log');
- const cites=(j.citations||[]).map(c=>'<button class="chip cite mono" onclick="this.scrollIntoView()">'+escHtml(c.file)+' p'+c.page+'</button>').join(' ');
- const msg=document.createElement('div');
- msg.className='msg ai fadein';
- const meta=j.files?(' · '+j.files+' file(s)'+(j.cached?' (already read)':'')+' · '+escHtml(j.model||'')):'';
- const body=(j.answer||'').trim()||'No answer came back — the steps above say where it stopped.';
- msg.innerHTML='<div>'+escHtml(body)+'</div>'+(meta?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+meta+'</p>':'')+cites;
- log.appendChild(msg);msg.scrollIntoView({block:'end'});
+ const el=document.createElement('div');el.className='work open fadein';
+ el.innerHTML='<button type="button" class="work-head" onclick="toggleWork(this)">'
+  +'<span class="w-ico w-run">'+icon('scan',15)+'</span>'
+  +'<span class="work-title">thinking…</span>'
+  +'<span class="spacer"></span><span class="w-n"></span><span class="w-chev">'+icon('arrow-right',13)+'</span></button>'
+  +'<div class="work-body"></div>';
+ log.appendChild(el);
+ const body=el.querySelector('.work-body');
+ const title=el.querySelector('.work-title');
+ const counter=el.querySelector('.w-n');
+ const icons={work:'info',model:'sparkles',tool:'search','tool-done':'check',
+              done:'check',warn:'alert'};
+ let done=false;
+ const add=(kind,text)=>{
+  if(kind!=='tool-done'&&kind!=='done'){
+   const lastRow=body.querySelector('.work-row.live');
+   if(lastRow)lastRow.classList.replace('live','dim');
+  }
+  const raw=text.split('\n')[0].trim();
+  const row=document.createElement('div');
+  row.className='work-row '+(kind==='tool'?'live':kind==='tool-done'?'done':kind);
+  row.innerHTML='<span class="icon">'+icon(icons[kind]||'info',14)+'</span>'
+   +'<span class="mono">'+escHtml(raw)+'</span>';
+  if(kind==='tool')row.classList.add('live');
+  if(kind==='tool-done'||kind==='done')row.classList.add('done');
+  body.appendChild(row);
+  title.textContent=raw;
+  counter.textContent=body.children.length;
+ };
+ const finish=(state)=>{
+  done=true;
+  const n=body.children.length;
+  const ico=el.querySelector('.w-ico');
+  if(state==='failed'){
+   ico.innerHTML=icon('alert',15);title.textContent='stopped';
+  }else{
+   ico.innerHTML=icon('check',15);
+   title.textContent=n>0?('read the index · '+n+' step'+(n===1?'':'s')+' of work'):'answered';
+  }
+  counter.textContent='';
+  el.classList.remove('open');
+ };
+ return {el,add,finish};
 }
-// The steps of a running job, shown as a timeline while it works.
-function renderSteps(steps,state){
- const box=document.getElementById('steps');
- if(!box)return;
- const icons={work:'scan',model:'sparkles',tool:'search','tool-done':'check',done:'check',warn:'alert'};
- box.innerHTML='<div class="steps">'+steps.map((s,i)=>{
-  const last=i===steps.length-1&&state==='running';
-  const kind=s.kind==='tool'?'tool '+(last?'active':''):(s.kind==='tool-done'?'done':s.kind);
-  return '<div class="step '+kind+'">'
-   +'<span class="icon">'+icon(icons[s.kind]||'info',15)+'</span>'
-   +'<span class="step-text">'+escHtml(s.text)+'</span></div>';
- }).join('')+'</div>';
+window.toggleWork=btn=>{
+ const block=btn.closest('.work');
+ block.classList.toggle('open');
+};
+// The stream: each step is pushed by the server the moment it happens.
+function streamJob(job,work){
+ return new Promise(resolve=>{
+  let es;
+  try{es=new EventSource('/api/ask/stream?job='+encodeURIComponent(job));}
+  catch(e){resolve(null);return;}
+  es.addEventListener('step',e=>{try{const s=JSON.parse(e.data);work.add(s.kind,s.text);}catch(err){}});
+  es.addEventListener('done',e=>{es.close();try{resolve(JSON.parse(e.data));}catch(err){resolve(null);}});
+  es.onerror=()=>{es.close();resolve(null);};
+ });
 }
-async function watchJob(job,onDone){
+// Fallback when SSE is unavailable: poll, feeding the same work block.
+async function watchJob(job,work){
  for(;;){
   let s;
-  try{s=await api('/api/ask/status?job='+encodeURIComponent(job));}catch(e){return;}
-  renderSteps(s.steps||[],s.state);
-  if(s.state==='done'||s.state==='failed'){onDone(s);return;}
-  await new Promise(r=>setTimeout(r,350));
+  try{s=await api('/api/ask/status?job='+encodeURIComponent(job));}catch(e){break;}
+  (s.steps||[]).forEach(step=>work.add(step.kind,step.text));
+  work.el.classList.remove('open');
+  if(s.state==='done'||s.state==='failed'){work.finish(s.state);return s;}
  }
+ return null;
 }
+function renderAnswer(j){
+ const log=document.getElementById('log');
+ const cites=(j.citations||[]).map(c=>'<button class="chip cite mono" '
+  +'onclick="revealCite(\''+encodeURIComponent(c.file)+'\',\''+c.page+'\')">'
+  +escHtml(c.file)+' p'+c.page+'</button>').join(' ');
+ const msg=document.createElement('div');
+ msg.className='msg ai fadein rich';
+ const meta=j.files?(' · '+j.files+' file(s)'+(j.cached?' (already read)':'')+' · '+escHtml(j.model||'')):'';
+ const body=(j.answer||'').trim();
+ msg.innerHTML=(body?md(body):'<p>No answer came back — expand the work above to see where it stopped.</p>')
+  +(meta?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+meta+'</p>':'')
+  +(cites?'<div class="row" style="margin-top:var(--s2)">'+cites+'</div>':'');
+ log.appendChild(msg);msg.scrollIntoView({block:'end',behavior:'smooth'});
+}
+function showFailure(done){
+ const log=document.getElementById('log');
+ const bad=document.createElement('div');bad.className='msg ai fadein';
+ bad.innerHTML='<div><strong>I stopped:</strong> '+escHtml(done.error||'unknown reason')+'</div>'
+  +(done.steps&&done.steps.length
+    ?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">Last step: '
+     +escHtml(done.steps[done.steps.length-1].text)+'</p>':'');
+ log.appendChild(bad);bad.scrollIntoView({block:'end'});
+}
+// One shared question flow for the Ask page and the per-folder ask boxes:
+// post the job, stream the work into an inline block, then render the answer.
+async function askOnce(boxEl,endpoint,q,folderOverride){
+ askOnce.f=folderOverride;
+ const work=makeWork();
+ let j;
+ try{j=await post(endpoint,{q});}
+ catch(err){
+  const log=document.getElementById(boxEl?boxEl:'log');
+  const bad=document.createElement('div');bad.className='msg ai';
+  bad.textContent='Something went wrong: '+(err&&err.message?err.message:'unknown error');
+  log.appendChild(bad);return;
+ }
+ if(j.error){
+  work.finish('failed');
+  const log=document.getElementById('log');
+  const bad=document.createElement('div');bad.className='msg ai';
+  bad.innerHTML='<div>'+escHtml(j.message||'Could not answer that.')+'</div>';
+  log.appendChild(bad);return;
+ }
+ let done=await streamJob(j.job,work);
+ if(!done)done=await watchJob(j.job,work);
+ window.__lastAsk=done;
+ work.finish(done?done.state:'failed');
+ if(!done)return;
+ if(done.state==='failed'){showFailure(done);return;}
+ renderAnswer(done);
+}
+window.askFolder=async(question)=>{
+ const input=document.getElementById('q');
+ const q=typeof question==='string'&&question?question:(input.value||'').trim();
+ if(!q)return;
+ if(input)input.value='';
+ const log=document.getElementById('log');
+ const mine=document.createElement('div');mine.className='msg me';mine.textContent=q;log.appendChild(mine);
+ await askOnce('log','/api/ask?folder='+encodeURIComponent(folder()),q,folder());
+};
 // --- keep the page in step with the server --------------------------------
 // The backend can be updated while this window is open (a `git pull`, a
 // restart). The page then runs yesterday's JavaScript against today's API,
-// which looks like a mysterious failure. So: compare the build stamp, and
-// offer a reload when they differ.
+// which looks like a mysterious failure. So: compare the build stamp — the
+// footer under the answer says which revision is serving this page.
 const CHARTA_BUILD=window.__CHARTA_BUILD__||'';
 async function checkBuild(){
  if(!CHARTA_BUILD)return;
  let v;
  try{v=await api('/api/version');}catch(e){return;}
- if(v&&v.build&&v.build!==CHARTA_BUILD){
-  const bar=document.getElementById('updateBar');
-  if(bar&&!bar.dataset.shown){
-   bar.dataset.shown='1';
-   bar.hidden=false;
-   bar.innerHTML='<span class="icon">'+icon('alert',15)+'</span> Charta was updated while this '
-    +'window was open — reload to get the new version.'
-    +'<button class="btn btn-primary" onclick="location.reload()">Reload</button>';
-  }
+ if(v&&v.build&&v.build!==CHARTA_BUILD&&!checkBuild.warned){
+  checkBuild.warned=true;
+  toast('Charta was updated — reload the window for the new version.',false);
+  const foot=document.querySelector('.askbuild');
+  if(foot)foot.innerHTML='<button class="chip" onclick="location.reload()">Reload — new version running</button>';
  }
 }
-setInterval(checkBuild,15000);
+setInterval(checkBuild,30000);
 window.addEventListener('load',()=>{checkBuild();});
 
 // One click that collects everything needed to diagnose a broken answer.
@@ -411,36 +564,75 @@ window.askFolder=async(question)=>{
  }
 };
 
-// --- outputs grid (sortable, sticky header) ---------------------------------
-const SORT={key:null,dir:1};
-window.loadOutput=async(button,kind)=>{
- if(button){document.querySelectorAll('.tabbar button').forEach(b=>b.setAttribute('aria-selected',String(b===button)));}
- const grid=document.getElementById('outGrid');
- if(!grid)return;
- grid.innerHTML='<div class="skel" style="height:88px">loading outputs…</div>';
- const sort=(typeof kind==='string'&&kind)?kind:(grid.dataset.kind||'receipts');
- grid.dataset.kind=sort;
- let data;
- try{data=await api('/api/outputs/rows?folder='+encodeURIComponent(folder())+'&kind='+sort+'&t='+Date.now());}
- catch(err){grid.innerHTML='<div class="empty"><div class="glyph">'+icon('empty',28)+'</div><h3>No output yet</h3><p>Press Rebuild now.</p></div>';return;}
- if(data.error){grid.innerHTML='<div class="banner warn"><span class="icon">'+icon('alert',16)+'</span>'+escHtml(data.error)+'</div>';return;}
- if(!data.rows||!data.rows.length){
-  grid.innerHTML='<div class="empty"><div class="glyph">'+icon('outputs',28)+'</div><h3>Nothing here yet</h3>'
-   +'<p>No rows in <span class="mono">'+escHtml(sort)+'</span>. Approve a file or press Rebuild now.</p></div>';return;}
- const cols=data.columns||[];
- let rows=data.rows.slice();
- if(SORT.key!==null&&sort===grid.dataset.sortKind){const i=SORT.key;
-  rows.sort((a,b)=>String(a[i]||'').localeCompare(String(b[i]||''),undefined,{numeric:true})*SORT.dir);}
- grid.dataset.sortKind=sort;
- grid.innerHTML='<div class="row" style="margin-bottom:var(--s2)"><span class="chip">'+rows.length+' rows</span>'
-  +'<span class="muted caption">'+sort+'</span><span class="spacer"></span>'
-  +'<span class="muted caption">click a header to sort</span></div>'
-  +'<div style="max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-in)"><table class="grid"><thead><tr>'
-  +cols.map((c,i)=>'<th scope="col"><button class="sort-btn" onclick="sortOutput('+i+')">'+escHtml(c)+' <span class="icon">'+icon('sort',13)+'</span></button></th>').join('')
-  +'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+(r[cols.indexOf(c)]||'')+'</td>').join('')+'</tr>').join('')
-  +'</tbody></table></div>';
+// --- outputs: one card per output kind, each telling its own story ----------
+window.outToggle=btn=>{
+ const html=btn.innerHTML;
+ const body=btn.closest('.card').querySelector('.outpreview');
+ const hide=html.includes('Hide preview');
+ body.style.display=hide?'none':'';
+ btn.innerHTML=hide
+  ?'<span class="icon">'+icon('empty',16)+'</span> Show preview'
+  :'<span class="icon">'+icon('empty',16)+'</span> Hide preview';
 };
-window.sortOutput=(i)=>{SORT.dir=(SORT.key===i)?-SORT.dir:1;SORT.key=i;loadOutput(null);};
+window.outShow=async btn=>{
+ const card=btn.closest('.card');
+ const folder=card.dataset.folder;
+ const data=card.dataset.file||'';
+ if(!data){toast('This output has no file yet — press Rebuild.',false);return;}
+ const rel='.charta/outputs/'+data;
+ try{await post('/api/file/open?folder='+encodeURIComponent(folder),{path:rel});
+  toast('Opened '+data);}
+ catch(err){toast('Could not open the file.',false);}
+};
+window.outRebuild=async btn=>{
+ const card=btn.closest('.card');
+ await loadCard(card,true);
+};
+async function loadCard(card,rebuild){
+ const folder=card.dataset.folder;
+ const kind=card.dataset.kind;
+ const box=card.querySelector('.outpreview');
+ const meta=card.querySelector('.outmeta');
+ const state=card.querySelector('.outstate');
+ box.innerHTML='<div class="skel" style="height:64px">reading the folder…</div>';
+ meta.textContent='';state.textContent='building…';
+ let d;
+ try{d=await api('/api/outputs/rows?folder='+encodeURIComponent(folder)
+  +'&kind='+kind+(rebuild?'&refresh=1':'')+'&t='+Date.now());}
+ catch(err){box.innerHTML='<div class="empty">Could not build this. '+(err&&err.message||'')+'</div>';return;}
+ if(d.error){
+  box.innerHTML='<div class="banner warn"><span class="icon">'+icon('alert',16)+'</span>'+escHtml(d.error)+'</div>';
+  state.textContent='failed';meta.textContent='';return;
+ }
+ card.dataset.file=d.file||'';
+ const n=d.total||0;
+ state.textContent=n?n+(n===1?' item':' items'):'nothing yet';
+ state.className='chip outstate '+(n?'pill-auto':'');
+ const how=d.file?('.charta/outputs/'+escHtml(d.file)+(d.xlsx?' + '+escHtml(d.xlsx):'')
+  +(' · built '+escHtml(d.modified||''))):'';
+ meta.innerHTML=how;
+ const cols=d.columns||[];
+ if(!n){
+  box.innerHTML='<div class="empty"><div class="glyph">'+icon('empty',24)+'</div>'
+   +'<h3>Nothing to show</h3><p>Rebuild after this folder has files with text '
+   +'(txt, md, csv, pdf).</p></div>';
+  return;
+ }
+ if(kind==='study'){
+  box.innerHTML='<div class="outtext mono">'+escHtml(String(d.rows[0][0]).slice(0,3000))+'</div>';
+  return;
+ }
+ box.innerHTML='<div style="max-height:260px;overflow:auto"><table class="grid"><thead><tr>'
+ box.innerHTML='<div style="max-height:260px;overflow:auto"><table class="grid"><thead><tr>'
+  +cols.map(c=>'<th scope="col">'+escHtml(c)+'</th>').join('')
+  +'</tr></thead><tbody>'
+  +d.rows.map(r=>'<tr>'+cols.map((c,i)=>'<td>'+escHtml(r[i]||'')+'</td>').join('')+'</tr>').join('')
+  +'</tbody></table></div>';
+}
+window.loadOutput=async()=>{
+ const cards=[...document.querySelectorAll('.outcard')];
+ await Promise.all(cards.map(c=>loadCard(c,false)));
+};
 
 // --- review keyboard -------------------------------------------------------
 let sel=0;
@@ -470,5 +662,5 @@ const r=new SR();r.onresult=ev=>{ta.value+=(ta.value?' ':'')+ev.results[0][0].tr
 document.getElementById('micBtn')?.classList.add('rec');r.onend=()=>document.getElementById('micBtn')?.classList.remove('rec');};
 
 initDropdowns();
-window.loadOutput&&document.getElementById('outGrid')&&window.loadOutput(null);
+window.loadOutput&&document.querySelector('.outcard')&&window.loadOutput();
 })();

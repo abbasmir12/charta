@@ -162,23 +162,63 @@ table.grid tbody tr:hover td{background:var(--raised)}
 .msg.me{background:var(--solid);color:var(--solid-fg);align-self:flex-end;border-bottom-right-radius:var(--r-xs)}
 .msg.ai{background:var(--surface);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:var(--r-xs)}
 
-/* the agent's work, step by step */
-.steps-wrap{max-width:760px;margin-bottom:var(--s3)}
-.steps{display:flex;flex-direction:column;gap:var(--s1);
-  border-left:1px solid var(--border);padding-left:var(--s4);margin:var(--s1) 0}
-.step{display:flex;align-items:flex-start;gap:var(--s2);padding:var(--s1) 0;
-  animation:fadeUp var(--t-base) var(--ease) both}
-.step .icon{color:var(--faint);margin-top:2px;flex:0 0 auto}
-.step-text{font-size:var(--fs-sm);color:var(--muted)}
-.step.done .step-text{color:var(--text)}
-.step.done .icon{color:var(--success)}
-.step.warn .icon{color:var(--warning)}
-.step.active .icon{color:var(--accent1);animation:pulse 1.4s var(--ease) infinite}
-.step.active .step-text{color:var(--text)}
-.step.tool .step-text{color:var(--text);font-family:var(--font-mono);font-size:var(--fs-label)}
-.step.tool .icon{color:var(--accent1)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.cite{display:inline-flex;align-items:center;gap:var(--s1);margin:var(--s3) var(--s1) 0 0}
+/* the model's work: a collapsible block that streams inside the chat */
+.work{max-width:760px;margin:var(--s2) 0 var(--s2) 0;align-self:flex-start;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);
+  overflow:hidden;animation:fadeUp var(--t-base) var(--ease) both}
+.work-head{display:flex;align-items:center;gap:var(--s2);width:100%;
+  padding:var(--s2) var(--s3);background:none;border:none;cursor:pointer;
+  color:var(--muted);font-size:var(--fs-sm);text-align:left}
+.work-head:hover{color:var(--text)}
+.w-ico{flex:0 0 auto;color:var(--faint)}
+.work.open .w-ico{color:var(--accent1)}
+.work-title{font-family:var(--font-mono);font-size:var(--fs-label);color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.work.open .w-title{color:var(--muted)}
+.w-running .work-title{color:var(--muted)}
+.work.open .w-chev{transform:rotate(90deg)}
+.w-chev{transition:transform var(--t-base) var(--ease);color:var(--faint)}
+.work-body{display:none;padding:0 var(--s3) var(--s2) var(--s5);
+  border-top:1px dashed var(--border)}
+.work.open .work-body{display:block}
+.work-row{display:flex;align-items:center;gap:var(--s2);padding:var(--s1) 0;
+  font-size:var(--fs-label);color:var(--muted);animation:fadeUp var(--t-base) var(--ease) both}
+.work-row .mono{font-family:var(--font-mono);font-size:var(--fs-label);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.work-row.live{color:var(--text)}
+.work-row.live .icon{color:var(--accent1);animation:pulse 1.4s var(--ease) infinite}
+.work-row.done .icon{color:var(--success)}
+.work-row.dim{opacity:.55}
+.work-row.warn{color:var(--warning)}
+.work-row.tool{color:var(--text)}
+.w-n{font-size:var(--fs-label);color:var(--faint)}
+
+/* markdown answers: readable, with the folder's own things highlighted */
+.msg.rich{max-width:760px;line-height:1.65;font-size:var(--fs-body)}
+.msg.rich h3,.msg.rich h4{margin:var(--s3) 0 var(--s1);font-weight:600;
+  color:var(--text);letter-spacing:-.01em}
+.msg.rich p{margin:0 0 var(--s2)}
+.msg.rich ul{margin:0 0 var(--s2);padding-left:var(--s4)}
+.msg.rich li{margin:0 0 var(--s1)}
+.msg.rich code{font-family:var(--font-mono);font-size:.92em;background:var(--solid);
+  color:var(--solid-fg);padding:1px 6px;border-radius:var(--r-xs)}
+.msg.rich pre{background:var(--solid);color:var(--solid-fg);padding:var(--s3);
+  border-radius:var(--r-card);overflow:auto;margin:0 0 var(--s2)}
+.msg.rich strong{color:var(--text)}
+.hl-date{font-family:var(--font-mono);font-size:.95em;color:var(--accent1);
+  background:color-mix(in srgb,var(--accent1) 12%,transparent);
+  padding:0 4px;border-radius:var(--r-xs)}
+.hl-amount{font-family:var(--font-mono);font-size:.95em;color:var(--success);
+  background:color-mix(in srgb,var(--success) 12%,transparent);
+  padding:0 4px;border-radius:var(--r-xs)}
+.tblwrap{overflow-x:auto;margin:0 0 var(--s2)}
+.msg.rich table{border-collapse:collapse;width:100%;font-size:var(--fs-sm)}
+.msg.rich th{text-align:left;padding:var(--s2);border-bottom:2px solid var(--border);
+  color:var(--muted);font-weight:600;white-space:nowrap}
+.msg.rich td{padding:var(--s2);border-bottom:1px solid var(--border);vertical-align:top}
+.msg.rich tr:last-child td{border-bottom:none}
+.msg.rich .cite{margin:0 var(--s1) 0 0}
+.cite{display:inline-flex;align-items:center;gap:var(--s1);margin:var(--s3) var(--s1) 0 0}.cite{display:inline-flex;align-items:center;gap:var(--s1);margin:var(--s3) var(--s1) 0 0}
 
 /* definition lists: facts without middle-dot meta strings */
 .facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:var(--s2) var(--s5);
@@ -290,3 +330,23 @@ table.grid tbody tr:hover td{background:var(--raised)}
   .stat:nth-child(3){border-left:none}
   .stat:nth-child(n+3){border-top:1px solid var(--border)}
 }
+
+/* outputs: one honest card per output kind, with its own story */
+.outgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
+  gap:var(--s4)}
+.outcard{display:flex;flex-direction:column}
+.outcard .row{margin-top:auto}
+.outstate{font-size:var(--fs-label)}
+.outmeta{font-size:var(--fs-label);margin:var(--s1) 0 var(--s2)}
+.outpreview{margin:var(--s2) 0;border:1px solid var(--border);
+  border-radius:var(--r-card);overflow:auto;background:var(--bg)}
+.outpreview:empty{display:none}
+.outpreview .empty{padding:var(--s3)}
+.outpreview table{border-collapse:collapse;width:100%;font-size:var(--fs-label)}
+.outpreview th{text-align:left;position:sticky;top:0;background:var(--surface);
+  padding:var(--s2);border-bottom:1px solid var(--border);color:var(--muted);
+  font-weight:600;white-space:nowrap}
+.outpreview td{padding:var(--s2);border-bottom:1px solid var(--border)}
+.outpreview tr:last-child td{border-bottom:none}
+.outtext{white-space:pre-wrap;font-size:var(--fs-label);padding:var(--s3);
+  max-height:260px;overflow:auto}

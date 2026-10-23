@@ -41,6 +41,38 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-23: **the ask experience rebuilt around how modern AI apps behave**
+  (researched: Perplexity/Claude-style streaming work, in-place accordions,
+  markdown answers). The question now streams its work over Server-Sent
+  Events (`/api/ask/stream`): each tool call appears inside the chat the
+  moment it happens in a collapsible work block ("thinking… → searched ·
+  read → ✓ 6 steps of work"), instead of a top-section timeline appearing all
+  at once. Answers render as **Markdown** through a small local renderer
+  (bold, headings, lists, tables, code — escaped first, no CDN) with
+  highlighted dates and amounts, and clickable `[file pN]` citation chips
+  that open the file. The yellow top banner is gone (a quiet reload chip
+  replaces it). Revision+start time on the ask footer (`.askbuild` chip).
+  Files: `charta/web/app.py`, `app.js`, `app.css`, `tests/test_web_ui.py`.
+  Verified: `pytest -q` 225 passed; SSE end-to-end with a scripted model.
+
+- 2026-10-23: **the AI can now propose organisation, and gaps come only
+  from it.** The agent may end its answer with RENAME / MOVE / GAP lines:
+  renames+moves become Review proposals (origin "llm", still nothing moves
+  without approval) and gaps are stored in `.charta/ai_gaps.json` shown on
+  the gaps page ("only it proposes these"). The automated expectations scan
+  and its counts/buttons were removed from overview and dashboard; "Missing
+  items" now counts model-noticed gaps. Files: `charta/core/agent.py`,
+  `charta/web/app.py`, `tests/test_agent.py`, `tests/test_web_ui.py`.
+  Verified: `pytest -q` 225 passed; end-to-end run produced one pending
+  rename proposal + one AI gap file.
+
+- 2026-10-23: **the outputs page rebuilt.** Four honest cards (what it is,
+  item count, file paths, when it was built) with an inline preview table
+  (first 8 rows; xlsx path shown), and Show file / Rebuild / Hide preview
+  per card — replacing the confusing tab+JSON grid. Files:
+  `charta/web/app.py`, `app.js`, `app.css`, `tests/test_runtime.py`.
+  Verified: `pytest -q` 225 passed.
+
 - 2026-10-21: **charta stop now kills the whole family.** The user restarted
   Charta ~100 times and kept seeing the stale UI, because Electron spawns its
   own Python backend; stopping only the recorded (shell) pid orphans the

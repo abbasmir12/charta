@@ -147,3 +147,30 @@ def test_a_question_with_no_match_names_what_the_folder_has(tmp_path, fake_provi
     miss = answer_query("hi", index, LLMClient(_cfg(fake_provider)))
     assert "hi" in miss.text
     assert "sponsorship_2026.txt" in miss.text
+
+
+def test_renames_and_gaps_are_split_from_the_answer():
+    """Textarea answer, Review proposals, Gap notes — never prose."""
+    from charta.core.agent import parse_ai_lines
+
+    text = ("Answer, with **facts**.\nRENAME: read me.txt -> "
+            "2026-03 report.txt\nMOVE: scan.pdf -> Bills 2026/\n"
+            "GAP: no invoice for June")
+    clean, gaps, props = parse_ai_lines(text)
+    assert "**facts**" in clean
+    assert "read me" not in clean
+    assert gaps == ["no invoice for June"]
+    rename = next(p for p in props if p.source.startswith("read"))
+    assert rename.dest_dir == "" and rename.new_name.endswith("report.txt")
+    assert rename.origin == "llm"
+    move = next(p for p in props if p.source.startswith("scan"))
+    assert move.dest_dir == "Bills 2026/"
+    assert move.new_name == "scan.pdf"
+
+
+def test_a_gapped_answer_still_clean():
+    from charta.core.agent import parse_ai_lines
+
+    clean, gaps, props = parse_ai_lines("FINAL: plain answer, no organisation lines")
+    assert clean == "plain answer, no organisation lines"
+    assert not gaps and not props

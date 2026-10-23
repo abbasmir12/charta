@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import json
 import pathlib
 import re
 import threading
@@ -29,7 +30,7 @@ from ..core import record
 from ..core import tools
 from ..core import watchlist
 from ..core.ask import answer_query, build_index, index_signature
-from ..core.agent import TOOL_SPECS, ask_with_tools
+from ..core.agent import TOOL_SPECS, ask_with_tools, parse_ai_lines
 
 TOOL_HINT = ("search_index looks through the folder's metadata (names, descriptions, "
              "tags, dates, amounts); read_file reads one file; list_files shows what "
@@ -37,7 +38,6 @@ TOOL_HINT = ("search_index looks through the folder's metadata (names, descripti
 from ..core.charter import create_charter_from_text, load_charter, save_charter
 from ..core.config import AppConfig
 from ..core.extract import VisionFn, extract_text
-from ..core.gaps import gaps_for_folder
 from ..core.llm import LLMClient
 from ..core.outputs import build_data_entry, build_receipts, build_study
 from ..core.paths import ProtectedPathError, assert_not_protected
@@ -264,7 +264,6 @@ def shell(page: str, folder: str, inner: str, mode: str = "suggest", label: str 
 <link rel="stylesheet" href="/static/tokens.css"><link rel="stylesheet" href="/static/app.css">
 <script>window.__CHARTA_DEBUG__={"true" if _debug() else "false"};window.__CHARTA_BUILD__={BUILD!r};window.__ICONS__={icons.manifest()};</script></head>
 <body>
-<div id="updateBar" class="banner warn" hidden style="margin:var(--s3) var(--s5) 0"></div>
 <header class="appbar" id="appbar">
 <span class="brand"><span class="mark" aria-hidden="true">{icon("file", 13)}</span> Charta</span>
 <nav class="crumbs" aria-label="Breadcrumb">{folder_crumb}<span class="crumb-cur">{here}</span></nav>
@@ -455,12 +454,11 @@ def folders_page(folder: str = "") -> str:
         ch = load_charter(f)
         props = prop_store.load_proposals(f)
         pending = [p for p in props if p.status == "pending"]
-        gaps = gaps_for_folder(f, ch.expected) if ch else []
-        missing = [g for g in gaps if not g.found]
+        ai_gaps = load_ai_gaps(f)
         on_disk = _folder_files(f)
         total_files += len(on_disk)
         total_pending += len(pending)
-        total_gaps += len(missing)
+        total_gaps += len(ai_gaps)
         is_watching = bool(entry.get("watching", True))
         if is_watching:
             watched_count += 1
@@ -468,7 +466,7 @@ def folders_page(folder: str = "") -> str:
         facts = [("Files in folder", str(len(on_disk))),
                  ("Indexed", str(len(props))),
                  ("Waiting for review", str(len(pending))),
-                 ("Missing items", str(len(missing))),
+                 ("Model-noticed gaps", str(len(ai_gaps))),
                  ("Moves logged", str(len(journal_mod.entries(f)))),
                  ("Watching since", entry.get("added_at", "") or "—"),
                  ("Last scan", entry.get("last_scan", "") or "never")]
@@ -530,7 +528,7 @@ def folders_page(folder: str = "") -> str:
             (watched_count, _plural(watched_count, "folder watched", "folders watched"), "folder"),
             (total_files, _plural(total_files, "file in them", "files in them"), "stack"),
             (total_pending, _plural(total_pending, "waiting for review", "waiting for review"), "review"),
-            (total_gaps, _plural(total_gaps, "gap found", "gaps found"), "gaps")])
+            (total_gaps, _plural(total_gaps, "gap the model noticed", "gaps the model noticed"), "gaps")])
     sub = (f"{watched_count} folder{'s' if watched_count != 1 else ''} watched, "
            f"{len(entries)} known in total.")
     sections = [f'<div class="stat-strip">{strip}</div>']
@@ -917,8 +915,7 @@ def overview(folder: str = "") -> str:
     props = prop_store.load_proposals(folder) if folder else []
     pend = [p for p in props if p.status == "pending"]
     on_disk = _folder_files(folder) if folder else []
-    gaps = gaps_for_folder(folder, ch.expected) if (folder and ch) else []
-    miss = [g for g in gaps if not g.found]
+    ai_gaps = load_ai_gaps(folder) if folder else []
     fq = quote(folder)
     purpose = ch.purpose if ch else "no charter yet"
     offline = "" if _provider_up() else (
@@ -931,7 +928,7 @@ def overview(folder: str = "") -> str:
         for value, label, ic in [
             (len(props), "files tracked", "stack"),
             (len(pend), "waiting for review", "review"),
-            (len(miss), f"{'gap' if len(miss) == 1 else 'gaps'} found", "gaps"),
+            (len(ai_gaps), f"{'gap' if len(ai_gaps) == 1 else 'gaps'} the model noticed", "gaps"),
             (len(journal_mod.entries(folder)) if folder else 0, "moves logged", "activity")])
     next_action = (f'<a class="btn btn-primary" href="/review?folder={fq}"><span class="icon">{icon("review", 16)}</span> Review {len(pend)}</a>'
                    if pend else f'<a class="btn" href="/outputs?folder={fq}"><span class="icon">{icon("outputs", 16)}</span> Open outputs</a>')
@@ -956,9 +953,9 @@ def overview(folder: str = "") -> str:
 <a class="btn" href="/review?folder={fq}"><span class="icon">{icon("review", 16)}</span> Open review</a></div></div>
 <p class="section-note">{waiting}</p></section>
 <section class="section"><div class="section-head">
-<h2 class="section-title">Missing items</h2>
-<div class="section-actions"><a class="btn" href="/gaps?folder={fq}"><span class="icon">{icon("gaps", 16)}</span> Check gaps</a></div></div>
-<p class="section-note">{'; '.join(g.note for g in miss[:3]) or 'Nothing missing.'}</p></section>
+<h2 class="section-title">Gaps the model noticed</h2>
+<div class="section-actions"><a class="btn" href="/gaps?folder={fq}"><span class="icon">{icon("gaps", 16)}</span> View gaps</a></div></div>
+<p class="section-note">{'; '.join(g['note'] for g in ai_gaps[:3]) or 'Nothing yet — these appear when Ask notices something is missing.'}</p></section>
 <section class="section"><div class="section-head">
 <h2 class="section-title">Latest outputs</h2>
 <div class="section-actions"><a class="btn" href="/outputs?folder={fq}"><span class="icon">{icon("outputs", 16)}</span> View outputs</a></div></div>
@@ -1010,43 +1007,41 @@ def review(folder: str = "") -> str:
 @app.get("/outputs", response_class=HTMLResponse)
 def outputs(folder: str = "") -> str:
     ch, mode = _page(folder, "outputs")
-    fq = quote(folder)
-    tabs = "".join(
-        f'<button type="button" role="tab" aria-selected="{str(i == 0).lower()}" '
-        f'onclick="loadOutput(this,{kind!r})">{label}</button>'
-        for i, (kind, label) in enumerate([("receipts", "Spreadsheet"), ("study", "Notes"),
-                                           ("flashcards", "Flashcards"), ("data", "Table")]))
-    rebuild = (f"fetch('/api/outputs?folder={fq}',{{method:'POST'}}).then(r=>r.json())"
-               ".then(j=>{document.getElementById('o').textContent=JSON.stringify(j,null,2);loadOutput()})")
-    inner = f"""{page_head("Outputs", (ch.purpose if ch else "Build a spreadsheet, notes and tables from this folder."),
-        f'<button class="btn" onclick="{rebuild}"><span class="icon">{icon("scan", 16)}</span> Rebuild now</button>')}
-<div class="card"><div class="tabbar" role="tablist" aria-label="Output type">{tabs}</div>
-<div id="outGrid"><div class="skel" style="height:88px">loading outputs…</div></div>
-<details style="margin-top:var(--s4)"><summary class="muted">Rebuild details</summary>
-<pre id="o" class="mono" style="white-space:pre-wrap">—</pre></details></div>"""
+    inner = f"""{page_head("Outputs", (ch.purpose if ch else "What this folder can become: a spreadsheet, notes, flashcards and tables."))}
+<div class="outgrid">{''.join(
+    f'''<div class="card outcard" data-kind="{kind}" data-folder="{escape_attr(folder)}">
+<div class="card-head"><h3><span class="icon">{icon(info["ic"], 16)}</span> {info["title"]}</h3>
+<span class="chip outstate" id="state-{kind}"></span></div>
+<p class="muted">{info["desc"]}</p>
+<div class="outmeta muted mono" id="meta-{kind}"></div>
+<div class="outpreview" id="prev-{kind}"></div>
+<div class="row" style="margin-top:var(--s3)">
+<button type="button" class="btn" onclick="outShow(this)"><span class="icon">{icon("folder-open", 16)}</span> Show file</button>
+<button type="button" class="btn btn-ghost" onclick="outRebuild(this)"><span class="icon">{icon("scan", 16)}</span> Rebuild</button>
+<button type="button" class="btn btn-ghost" onclick="outToggle(this)"><span class="icon">{icon("empty", 16)}</span> Hide preview</button>
+</div></div>''' for kind, info in OUTPUT_KINDS.items())}</div>"""
     return shell("outputs", folder, inner, mode)
 
 
 @app.get("/gaps", response_class=HTMLResponse)
 def gaps(folder: str = "") -> str:
-    ch, mode = _page(folder, "gaps")
-    items = gaps_for_folder(folder, ch.expected) if (folder and ch) else []
-    done = sum(1 for g in items if g.found)
-    pct = int(100 * done / len(items)) if items else 100
+    _ch, mode = _page(folder, "gaps")
     fq = quote(folder)
+    items = load_ai_gaps(folder) if folder else []
     rows = "".join(
-        f'<div class="gap {"found" if g.found else "missing"}">'
-        f'<span class="icon">{icon("check", 16) if g.found else icon("empty", 16)}</span>'
-        f'<span>{g.note}</span></div>' for g in items)
+        f'<div class="row-item"><div class="row"><span class="icon">'
+        f'{icon("gaps", 16)}</span><span>{escape_attr(g["note"])}</span>'
+        f'<span class="spacer"></span><span class="caption mono">{escape_attr(g.get("at", ""))}</span></div></div>'
+        for g in items)
     if not rows:
-        body = empty_state("gaps", "No expectations declared",
-                           "Add an \"Expected items\" list to the charter and Charta will tell you what is missing.",
-                           f'<a class="btn" href="/?folder={fq}"><span class="icon">{icon("folder-add", 16)}</span> Edit charter</a>')
+        body = empty_state("gaps", "Nothing missing — yet",
+                           "When the model notices the folder is missing something while "
+                           "answering (e.g. \"no bill for March\"), it shows up here. Gaps "
+                           "come from the AI, not from an automated check.",
+                           f'<a class="btn" href="/ask?folder={fq}"><span class="icon">{icon("sparkles", 16)}</span> Ask about this folder</a>')
     else:
         body = f'<div class="card">{rows}</div>'
-    ring = (f'<div class="ring" style="--pct:{pct}" role="img" '
-            f'aria-label="completeness {pct} percent"><span>{pct}%</span></div>')
-    inner = f"""{page_head("Gaps", f"{done} of {len(items)} expected items present.", ring)}
+    inner = f"""{page_head("Gaps", "What the model noticed is missing — only it proposes these.")}
 {body}"""
     return shell("gaps", folder, inner, mode)
 
@@ -1078,17 +1073,16 @@ def ask_page(folder: str = "", q: str = "") -> str:
                           f'<span class="chip">{cfg.llm_provider} · {cfg.generation_model}</span>')}
 <div id="steps" class="steps-wrap" aria-live="polite"></div>
 <div class="chatlog" id="log" role="log" aria-live="polite">
-<div class="msg ai">Ask anything about this folder — I quote the file and page I used, and I won't invent an answer.</div></div><div class="row"><input id="q" type="text" aria-label="Your question" placeholder="e.g. What electricity bills do we have for March?" value="{escape_attr(q)}">
+<div class="msg ai">Ask anything about this folder — I show my work as I go, quote the file and page I used, and I won't invent an answer.</div></div><div class="row"><input id="q" type="text" aria-label="Your question" placeholder="e.g. What electricity bills do we have for March?" value="{escape_attr(q)}">
 <button type="button" class="btn btn-icon" onclick="toggleMic('q')" aria-label="Ask by voice">{icon("mic", 18)}</button>
 <button type="button" class="btn btn-primary" onclick="askFolder()"><span class="icon">{icon("arrow-right", 16)}</span> Ask</button></div>
 <div class="row" style="margin-top:var(--s3)">{starters}</div>
-<div id="ans"></div>
 <section class="section"><div class="section-head">
 <h2 class="section-title">Tools the model can call</h2>
 <span class="section-note">The model works from the index, not by reading everything</span></div>
 <div class="row">{''.join(f'<span class="chip mono">{t["name"]}</span>' for t in TOOL_SPECS)}</div>
 <p class="muted">{TOOL_HINT}</p>
-<p style="margin-top:var(--s2)"><button type="button" class="chip" onclick="copyDiag()">Copy diagnostics</button>
+<p class="askbuild muted" style="margin-top:var(--s2)"><button type="button" class="chip" onclick="copyDiag()">Copy diagnostics</button>
 <span class="muted"> — if an answer never arrives, paste what that gives you.</span>
 <span class="muted mono" style="margin-left:var(--s3)">code {_code_revision()} · backend started {_STARTED}</span></p></section>"""
     if q.strip():
@@ -1338,18 +1332,31 @@ def api_scan_status(job: str = "") -> JSONResponse:
 
 OUTPUT_FILES = {"receipts": "receipts.csv", "study": "notes.md",
                 "flashcards": "flashcards.csv", "data": "data_entry.csv"}
+OUTPUT_KINDS = {
+    "receipts": {"title": "Receipts spreadsheet", "ic": "outputs",
+                 "desc": "One row per receipt or invoice found here: date, vendor, "
+                         "amount and the file it came from. Opens in Excel."},
+    "study": {"title": "Study notes", "ic": "notes",
+              "desc": "This folder's text distilled into readable notes — headings, "
+                      "facts and definitions."},
+    "flashcards": {"title": "Flashcards", "ic": "flash",
+                   "desc": "Question-and-answer cards built from the notes, for revising."},
+    "data": {"title": "Data-entry table", "ic": "table",
+             "desc": "One row per file with the charter's fields — the whole folder at a glance."},
+}
 
 
 @app.get("/api/outputs/rows")
 def api_output_rows(folder: str, kind: str = "receipts") -> JSONResponse:
-    """Rows for the output grid (rebuilt on demand, then parsed server-side)."""
-    if kind not in OUTPUT_FILES:
+    """One output card: what it is, its rows (a short preview), and the files."""
+    if kind not in OUTPUT_KINDS:
         return JSONResponse({"error": f"unknown output '{kind}'"}, status_code=400)
+    info = OUTPUT_KINDS[kind]
     try:
         if kind == "receipts":
             build_receipts(folder)
-        elif kind == "study":
-            build_study(folder)
+        elif kind in ("study", "flashcards"):
+            build_study(folder)  # writes the notes and the flashcards together
         else:
             ch = load_charter(folder)
             build_data_entry(folder, list(ch.fields) if ch else [])
@@ -1357,16 +1364,26 @@ def api_output_rows(folder: str, kind: str = "receipts") -> JSONResponse:
         return JSONResponse({"error": str(e)}, status_code=200)
     target = pathlib.Path(folder) / ".charta" / "outputs" / OUTPUT_FILES[kind]
     if not target.exists():
-        return JSONResponse({"columns": [], "rows": [], "path": str(target)})
+        return JSONResponse({"kind": kind, **info, "columns": [], "rows": [],
+                             "total": 0, "file": "", "modified": ""})
     text = target.read_text(encoding="utf-8", errors="replace")
+    modified = (datetime.datetime.fromtimestamp(target.stat().st_mtime)
+                .strftime("%d %b %Y %H:%M"))
     if target.suffix != ".csv":  # notes: show the Markdown as-is
-        return JSONResponse({"columns": ["markdown"], "rows": [[text[:6000]]], "path": str(target)})
+        return JSONResponse({"kind": kind, **info,
+                             "columns": ["note"], "rows": [[text[:6000]]],
+                             "total": 1, "file": target.name, "modified": modified})
     import csv as csv_mod
 
     with target.open(newline="", encoding="utf-8") as fh:
         rows = list(csv_mod.reader(fh))
     header, body = (rows[0], rows[1:]) if rows else ([], [])
-    return JSONResponse({"columns": header, "rows": body[:500], "path": str(target)})
+    xlsx = target.with_suffix(".xlsx")
+    return JSONResponse({"kind": kind, **info,
+                         "columns": header, "rows": body[:8],
+                         "total": len(body), "file": target.name,
+                         "modified": modified,
+                         "xlsx": xlsx.name if xlsx.exists() else ""})
 
 
 @app.post("/api/approve")
@@ -1451,6 +1468,44 @@ async def api_ask(req: Request, folder: str = "") -> JSONResponse:
     return JSONResponse(job.as_dict())
 
 
+@app.get("/api/ask/stream")
+def api_ask_stream(job: str = "") -> Response:
+    """The live story of a question, as it happens (Server-Sent Events).
+
+    Polling shows snapshots; streaming lets the UI draw each step the moment
+    it starts — the tool call appears, runs, resolves, and the next one
+    begins, exactly like the model is working in front of you.
+    """
+    import json as json_mod
+    import time
+
+    def gen():
+        seen = 0
+        last_state = None
+        deadline = time.time() + 600  # ten minutes is far past any model call
+        while time.time() < deadline:
+            current = _jobs.get(job)
+            if current is None:
+                yield f"event: error\ndata: {json_mod.dumps({'error': 'unknown-job'})}\n\n"
+                return
+            steps = list(current.steps)
+            while seen < len(steps):
+                s = steps[seen]
+                seen += 1
+                yield f"event: step\ndata: {json_mod.dumps(s)}\n\n"
+            if current.state != last_state and last_state is not None:
+                yield (f"event: state\ndata: "
+                       f"{json_mod.dumps({'state': current.state, 'error': current.error})}\n\n")
+            last_state = current.state
+            if current.state in ("done", "failed"):
+                yield f"event: done\ndata: {json_mod.dumps(current.as_dict())}\n\n"
+                return
+            time.sleep(0.15)
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
 @app.get("/api/ask/status")
 def api_ask_status(job: str = "") -> JSONResponse:
     """The live state of a question: the steps so far and the answer."""
@@ -1488,6 +1543,24 @@ def _run_ask(job: Job, folder: str, question: str) -> None:
         agent = ask_with_tools(question, folder, client, steps=steps)
         for s in steps:
             job.step(s["kind"], s["text"])
+        # Organisation lines the model added (moves / gaps) are not prose:
+        # they become Review proposals and AI-gap notes, both awaiting the user.
+        if agent.answer:
+            cleaned, ai_gaps, new_props = parse_ai_lines(agent.answer)
+            job.answer = cleaned
+            if new_props:
+                for prop in new_props:
+                    prop_store.upsert(pathlib.Path(folder), prop)
+                job.step("work", f"Proposed {len(new_props)} change(s) — review them before anything moves.")
+            if ai_gaps:
+                known = load_ai_gaps(folder)
+                have = {g.get("note") for g in known}
+                for note in ai_gaps:
+                    if note not in have:
+                        known.append({"note": note,
+                                      "at": datetime.datetime.now().isoformat(timespec="seconds")})
+                save_ai_gaps(folder, known)
+                job.step("work", f"Noticed {len(ai_gaps)} gap(s) in this folder.")
         cited = bool(re.search(r"\[[^\]]+\s+p\d+\]", agent.answer or ""))
         if agent.answer and (agent.used_tools or cited):
             job.answer = agent.answer
@@ -1530,6 +1603,27 @@ def _run_ask(job: Job, folder: str, question: str) -> None:
 # first question pays for the reading; every later one is instant.
 _ask_cache: dict[str, tuple[str, list[dict], dict]] = {}
 _ask_lock = threading.Lock()
+
+
+def _ai_gaps_path(folder: str | pathlib.Path) -> pathlib.Path:
+    return (pathlib.Path(folder) / ".charta" / "ai_gaps.json")
+
+
+def load_ai_gaps(folder: str | pathlib.Path) -> list[dict]:
+    """Gaps the *model* noticed while answering — not an automated scan."""
+    p = _ai_gaps_path(folder)
+    if not p.exists():
+        return []
+    try:
+        return list(json.loads(p.read_text(encoding="utf-8")))
+    except Exception:  # noqa: BLE001 — a broken file is just no history
+        return []
+
+
+def save_ai_gaps(folder: str | pathlib.Path, gaps: list[dict]) -> None:
+    p = _ai_gaps_path(folder)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(gaps, indent=2), encoding="utf-8")
 
 
 @dataclass

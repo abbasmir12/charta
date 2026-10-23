@@ -1,6 +1,8 @@
 """Web UI polish: debug flag, icon, protected refusal, folder picker, charter mode."""
 from __future__ import annotations
 
+import json
+
 import pathlib
 import re
 import pytest
@@ -389,9 +391,12 @@ def test_every_ask_box_polls_the_job():
     for name in asking:
         body = src[starts[name]:ends[name]]
         assert "/api/ask?" in body, f"{name} must ask /api/ask"
-        assert "watchJob(" in body, f"{name} must poll the ask job"
+        assert "askOnce(" in body, f"{name} must go through the shared job flow"
         assert re.search(r"j\.answer", body) is None, (
-            f"{name} must read done.answer from the polled job, not j.answer")
+            f"{name} must read done.answer from the streamed job, not j.answer")
+    # the shared flow itself streams the job and renders the polled answer
+    shared = src[src.index("async function askOnce"):src.index("window.askFolder")]
+    assert "streamJob(" in shared and "watchJob(" in shared
     # And no function anywhere may fall back to the old literal.
     assert src.count("No answer.") == 0
 
@@ -401,3 +406,49 @@ def test_pages_and_scripts_come_with_no_store(client):
     The server must never let the browser reuse them."""
     assert client.get("/").headers.get("cache-control") == "no-store"
     assert client.get("/static/app.js").headers.get("cache-control") == "no-store"
+
+
+def test_the_ask_stream_sends_steps_then_a_final_done(client, tmp_path):
+    """SSE: steps arrive as events, and a last "done" event has the answer."""
+    (tmp_path / "a.txt").write_text("The sponsorship is 5000 EUR.", encoding="utf-8")
+    job = client.post("/api/ask", params={"folder": str(tmp_path)},
+                      json={"q": "what is the sponsorship?"}).json()
+    assert job.get("job")
+    events: list[tuple[str, str]] = []
+    with client.stream("GET", "/api/ask/stream",
+                       params={"job": job["job"]}) as response:
+        assert response.headers["content-type"].startswith("text/event-stream")
+        for line in response.iter_lines():
+            if line.startswith("event: "):
+                events.append((line[7:], ""))
+            elif line.startswith("data: ") and events:
+                events[-1] = (events[-1][0], line[6:])
+                if events[-1][0] == "done":
+                    break
+    kinds = [json.loads(d)["kind"] for e, d in events if e == "step" and d]
+    assert "work" in kinds
+    assert events[-1][0] == "done"
+    final = json.loads(events[-1][1])
+    assert final["state"] == "done"
+    assert final["answer"]
+
+
+def test_a_model_gap_lands_in_the_ai_gaps(client, tmp_path, monkeypatch):
+    """GAP: lines the model writes become AI-gap notes for the gaps page."""
+    from charta.core.agent import AgentResult
+    import charta.web.app as web_app
+
+    def fake(question, folder, llm_client, steps=None, rounds=5):
+        if steps is not None:
+            steps.append({"kind": "done", "text": "Answer ready."})
+        return AgentResult(
+            answer="The March bill is not here.\n\nGAP: no electricity bill for March",
+            citations=[], calls=[], used_tools=True, files=["b.txt"])
+
+    monkeypatch.setattr(web_app, "ask_with_tools", fake)
+    (tmp_path / "b.txt").write_text("x", encoding="utf-8")
+    body = client.post("/api/ask", params={"folder": str(tmp_path)},
+                       json={"q": "what?"}).json()
+    _wait_job(client, body["job"])
+    gaps = web_app.load_ai_gaps(tmp_path)
+    assert gaps and gaps[0]["note"] == "no electricity bill for March"

@@ -22,10 +22,12 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from dataclasses import dataclass, field
 
 from . import index_db
 from .ask import Citation, chunk_text
+from .classify import Proposal
 from .llm import LLMClient
 
 MAX_ROUNDS = 5
@@ -65,11 +67,20 @@ How to work:
    or
    {{"tool":"read_file","args":{{"path":"Receipts/receipt_edf.txt"}}}}
 3. Use the results to pick the files worth reading, then read them.
-4. When you can answer, write it in plain language and cite the file and page
-   like [receipt_edf.txt p1]. Never invent a fact. If the folder does not
-   contain the answer, say so plainly.
+4. When you can answer, format the final answer in Markdown — short
+   paragraphs, **bold** for the key facts, a table when comparing, and keep
+   exact dates and amounts. Cite every file you used like [file.txt p1].
+   Never invent a fact. If the folder does not contain the answer, say so
+   plainly.
 5. The last line of your final answer must be exactly:
    FINAL: <your answer>
+
+6. You may also help organise the folder — propose only, never claim you
+   changed anything; the user approves in Review. Add these lines at the very
+   end of your final answer, one per line, only when genuinely helpful:
+   RENAME: current_file.txt -> clearer_name.txt
+   MOVE: file.txt -> Subfolder/          (creates the folder if needed)
+   GAP: what is missing from this folder (e.g. "no electricity bill for March")
 
 CATALOGUE:
 {catalogue}"""
@@ -289,6 +300,46 @@ def _clean_final(text: str) -> str:
     if body:
         return body
     return final or text.strip()
+
+
+def parse_ai_lines(text: str) -> tuple[str, list[str], list["Proposal"]]:
+    """Split the model's answer from its organisation lines.
+
+    A trailing block of ``RENAME:``, ``MOVE:`` and ``GAP:`` lines is not prose:
+    the renames become Review proposals the user approves (nothing moves on
+    its own), and the gaps become notes about what the folder is missing.
+    """
+    text = re.sub(r"^\s*FINAL:\s*", "", text.strip())
+    prose: list[str] = []
+    gaps: list[str] = []
+    props: list[Proposal] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        m_move = re.match(r"^(?:RENAME|MOVE):\s*(.+?)\s*->\s*(.+?)\s*$", line)
+        m_gap = re.match(r"^GAP:\s*(.+)$", line)
+        if m_gap:
+            gaps.append(m_gap.group(1))
+            continue
+        if m_move:
+            src = m_move.group(1).strip().strip('"')
+            dst = m_move.group(2).strip().strip('"')
+            if dst.endswith("/"):
+                # A directory target: the file keeps its name, just moves in.
+                props.append(Proposal(source=src, dest_dir=dst.rstrip("/") + "/",
+                                      new_name=pathlib.PureWindowsPath(src).name if "\\" in src
+                                      else pathlib.Path(src).name,
+                                      reason=f"belongs together in {dst.rstrip('/')}",
+                                      confidence=0.6, origin="llm"))
+            else:
+                # A file target beside the source: a rename in place.
+                props.append(Proposal(source=src, dest_dir="",
+                                      new_name=dst.rsplit("/", 1)[-1],
+                                      reason="clearer name proposed by the model",
+                                      confidence=0.6, origin="llm"))
+            continue
+        prose.append(raw)
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(prose)).strip()
+    return cleaned, gaps, props
 
 
 def _citations(folder: str | pathlib.Path, files: list[str]) -> list[Citation]:

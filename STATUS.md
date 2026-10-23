@@ -472,6 +472,13 @@ pass and a recorded before/after demo.
 
 ## Failures & Lessons
 
+- 2026-10-23: the ask rewrite left a duplicate old `window.askFolder` behind;
+  the later definition won, calling the new `watchJob(job, work)` with a
+  callback as `work` — the user saw "work.add is not a function" on every
+  question. Lesson: after a heavy block replacement, grep for all
+  definitions of every entry point it declared; a test now asserts exactly
+  one definition per name and that entries route through askOnce.
+
 - A compound report ("terminal flashes, then 0 files tracked") had two causes:
   a console-script launcher and a UI that never actually watched. Split compound
   reports and verify each symptom.

@@ -526,43 +526,6 @@ window.copyDiag=async()=>{
  toast('Diagnostics copied — paste them back.',true);
 };
 
-window.askFolder=async(question)=>{
- const input=document.getElementById('q');
- const q=typeof question==='string'&&question?question:(input.value||'').trim();
- if(!q)return;
- if(input)input.value='';
- const log=document.getElementById('log');
- const mine=document.createElement('div');mine.className='msg me';mine.textContent=q;log.appendChild(mine);
- const steps=document.getElementById('steps');
- if(steps)steps.innerHTML='<div class="steps"><div class="step active"><span class="icon">'
-  +icon('scan',15)+'</span><span class="step-text">starting…</span></div></div>';
- try{
-  const j=await post('/api/ask?folder='+encodeURIComponent(folder()),{q});
-  if(j.error){toast(j.message||'Could not answer that.',false);
-   if(steps)steps.innerHTML='';return;}
-  await watchJob(j.job,(done)=>{
-   window.__lastAsk=done;
-   if(done.state==='failed'){
-    // Never swallow a failure: it goes into the chat, where it can be read
-    // (and pasted back when something is broken).
-    const log=document.getElementById('log');
-    const bad=document.createElement('div');bad.className='msg ai';
-    bad.innerHTML='<div><strong>I stopped:</strong> '+escHtml(done.error||'unknown reason')+'</div>'
-     +(done.steps&&done.steps.length?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">Last step: '+escHtml(done.steps[done.steps.length-1].text)+'</p>':'');
-    log.appendChild(bad);bad.scrollIntoView({block:'end'});
-    if(steps)steps.innerHTML='';
-    return;
-   }
-   renderAnswer({answer:done.answer,citations:done.citations,files:done.files,
-    cached:done.cached,model:done.model});
-  });
- }catch(err){
-  if(steps)steps.innerHTML='';
-  const note=document.createElement('div');note.className='msg ai';
-  note.textContent='Something went wrong: '+(err&&err.message?err.message:'unknown error');
-  log.appendChild(note);
- }
-};
 
 // --- outputs: one card per output kind, each telling its own story ----------
 window.outToggle=btn=>{

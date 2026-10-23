@@ -452,3 +452,18 @@ def test_a_model_gap_lands_in_the_ai_gaps(client, tmp_path, monkeypatch):
     _wait_job(client, body["job"])
     gaps = web_app.load_ai_gaps(tmp_path)
     assert gaps and gaps[0]["note"] == "no electricity bill for March"
+
+
+def test_the_ask_page_has_one_ask_function_per_name():
+    """A duplicate askFolder overwrote the streaming one and broke the flow
+    with 'work.add is not a function'. The wiring must stay unique."""
+    src = (pathlib.Path(__file__).parent.parent / "charta" / "web"
+           / "static" / "app.js").read_text(encoding="utf-8")
+    for name in ("window.askFolder=", "window.askIn=", "async function askOnce",
+                 "function makeWork", "function streamJob", "async function watchJob"):
+        assert src.count(name) == 1, f"{name} must be defined exactly once"
+    # The ask entry points must go through askOnce (the streamed flow).
+    ask = src[src.index("window.askFolder="):src.index("// --- keep the page in step")]
+    assert "askOnce(" in ask and "watchJob(j.job,(done)" not in ask
+    ask_in = src[src.index("window.askIn="):src.index("window.openFile=")]
+    assert "askOnce(" in ask_in

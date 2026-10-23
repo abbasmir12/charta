@@ -203,11 +203,33 @@ def test_the_answer_protocol_validates_blocks_and_never_leaks_hashes():
 
 
 def test_a_protocol_miss_degrades_to_clean_blocks_not_raw_markdown():
-    """Even a completely off-protocol answer renders safely: no literal
-    hashes, tables or pipes can leak into a heading again."""
+    """Even a completely off-protocol answer renders safely: converted into
+    typed blocks, no literal hashes, tables or pipes can leak again."""
     from charta.core.agent import structured_answer
 
     clean, blocks, _, _ = structured_answer(
         "FINAL: ### oops\n## not json at all")
-    assert all(b["type"] == "p" for b in blocks)
+    assert [b["type"] for b in blocks] == ["heading", "heading"]
     assert "###" not in clean and "##" not in clean
+
+
+def test_a_screenshot_style_off_protocol_answer_is_converted():
+    """The real-world failure: raw text with hashes mid-line ('###
+    Visible text'), hash headings, a bullet list, a pipe table — all must
+    become typed blocks, and no '###' may survive anywhere."""
+    import json
+
+    from charta.core.agent import structured_answer
+
+    raw = ("Based on Shots\\2026-08-13_165240.png (p1) — document: ### Visible"
+           " text - form link - M - Sponsorship\n\n### Key fields\n"
+           "- Year/date: 2026\n- Email: me@gmail.com\n\n| Field | Value |\n"
+           "| --- | --- |\n| Year | 2026 |\n\n**Summary**\nIt is a form.")
+    clean, blocks, _, _ = structured_answer(raw)
+    types = [b["type"] for b in blocks]
+    assert "heading" in types and "list" in types and "table" in types
+    assert not any("###" in json.dumps(b) for b in blocks)
+    heads = [b["text"] for b in blocks if b["type"] == "heading"]
+    assert "Key fields" in heads and "Summary" in heads
+    # the mid-line artifact is gone from the prose, not the heading rule
+    assert all("###" not in b.get("text", "") for b in blocks)

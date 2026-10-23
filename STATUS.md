@@ -41,6 +41,20 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-23: **off-protocol answers no longer dump raw markdown** (user
+  screenshot showed '###' mid-line and a pasted form dump rendered as one
+  giant paragraph). The fallback path is now a real markdown→blocks
+  converter (`_markdown_to_blocks`): '#'-headings, bold-only section lines,
+  '-' lists, '|' tables and paragraphs all become the same typed blocks the
+  protocol produces, and stray mid-line hash runs ('document: ### Visible
+  text') are scrubbed. The agent also retries once when the model ignored
+  the protocol (not only when it sent broken JSON), and the system prompt
+  now forbids '###' anywhere and pasting long raw text — summarise instead.
+  Files: `charta/core/agent.py`, `tests/test_agent.py`. Verified:
+  `pytest -q` 232 passed; the exact screenshot content converted to
+  p/heading/list/table/heading/p with zero hashes.
+
+
 - 2026-10-23: **answers now follow a strict JSON blocks protocol.** The
   model's final answer must be `FINAL: {"blocks":[...]}` with typed blocks
   only (heading 1–3 / p / list / table / facts), validated with Pydantic in

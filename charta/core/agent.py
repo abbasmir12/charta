@@ -84,6 +84,9 @@ How to work:
    points in a list, everything else in p blocks. Cite the files you used
    inside the text, like [file.txt p1]. Never invent a fact. If the folder
    does not contain the answer, say so plainly in a p block.
+   Block text rules: plain sentences only — never "###" or "|" separators or
+   markdown symbols, and never paste long raw text from the files (whole URLs,
+   form fields, OCR lines). Summarise what a file means in your own words.
 5. The last line of your answer must be exactly:
    FINAL: {{"blocks":[...]}}
 
@@ -263,20 +266,28 @@ def ask_with_tools(question: str, folder: str | pathlib.Path, client: LLMClient,
         if not action:
             answer = strip_tool_calls(text)
             # The protocol asks for a blocks JSON. If the model clearly tried
-            # it and missed, one corrective round — then graceful fallback.
-            _, blocks, _, _ = structured_answer(answer)
-            looks_json = '"blocks"' in answer
-            if looks_json and blocks and blocks[0].get("type") == "p" \
-                    and len(blocks) == 1 and round_no < rounds - 1 and not retried_json:
+            # it and missed — or plainly ignored it and wrote block-level
+            # markdown — one corrective round. Then graceful fallback.
+            parsed = structured_answer(answer)
+            is_only_paragraphs = (parsed[1] and
+                                  all(b.get("type") == "p" for b in parsed[1]))
+            tried_but_missed = '"blocks"' in answer and is_only_paragraphs
+            ignored_protocol = (not tried_but_missed
+                                and _answer_needs_format_retry(parsed[0]))
+            if (tried_but_missed or ignored_protocol) \
+                    and round_no < rounds - 1 and not retried_json:
                 retried_json = True
                 answer = ""
-                note("warn", "The answer was not the asked JSON shape — asking once more.")
+                why = ("not valid blocks JSON" if tried_but_missed
+                       else "not in the blocks JSON format")
+                note("warn", f"The answer was {why} — asking once more.")
                 messages.append({"role": "assistant", "content": text})
                 messages.append({"role": "user", "content":
-                                 "That FINAL line was not valid blocks JSON. Send the answer "
-                                 "again as one line, exactly: "
-                                 "FINAL: {\"blocks\":[...]} — using only the block shapes "
-                                 "from the instructions. Nothing else on that line."})
+                                 f"Your final answer was {why}. Send it again as ONE line, "
+                                 "exactly: FINAL: {\"blocks\":[...]} — using only the block "
+                                 "shapes from the instructions. No ###, no markdown tables, "
+                                 "no other text on that line. Summarise the files in your own "
+                                 "words; do not paste long raw text from them into the answer."})
                 continue
             note("done", "Answer ready.")
             break
@@ -456,11 +467,112 @@ def _validate_blocks(raw: object) -> list[dict] | None:
     return out
 
 
+def _scrub_artifacts(text: str) -> str:
+    """Remove stray markdown artifact runs anywhere inside a line.
+
+    Line-start hashes must be left for the heading converter; only runs that
+    follow a space or dash mid-line — leftovers of a model that ignored the
+    protocol, like 'document: ### Visible text' — are removed.
+    """
+    text = re.sub(r"(?<=[ \t])#{2,6}(\s+|$)", "", text)
+    return text
+
+
+def _markdown_to_blocks(text: str) -> list[dict]:
+    """Convert a non-protocol answer (markdown-ish) into proper blocks.
+
+    The model may ignore the JSON protocol; it famously still writes
+    '#'-headings, '-' lists and '|' tables. Instead of dumping that raw
+    (the literal '###' disaster), translate it into the same typed blocks
+    the protocol produces, so the UI renders it cleanly either way.
+    """
+    blocks: list[dict] = []
+    lines = _scrub_artifacts(text).splitlines()
+    para: list[str] = []
+    items: list[str] = []
+    cols: list[str] | None = None
+    rows: list[list[str]] = []
+
+    def flush_para() -> None:
+        if para:
+            blocks.append({"type": "p", "text": " ".join(x.strip() for x in para).strip()})
+            para.clear()
+
+    def flush_list() -> None:
+        if items:
+            blocks.append({"type": "list", "items": items[:12]})
+            items.clear()
+
+    def flush_table() -> None:
+        nonlocal cols, rows
+        if cols:
+            blocks.append({"type": "table", "columns": cols, "rows": rows[:30]})
+            cols, rows = None, []
+
+    for line in lines:
+        stripped = line.strip()
+        m_head = re.match(r"^#{1,6}\s*(.*)$", stripped)
+        if m_head:
+            flush_para(); flush_list(); flush_table()
+            n = len(stripped) - len(stripped.lstrip("#"))
+            level = 1 if n <= 2 else 2 if n == 3 else 3
+            blocks.append({"type": "heading", "level": level,
+                           "text": m_head.group(1).replace("**", "").strip()})
+            continue
+        # Models write section titles as fully bolded lines ("**Summary**").
+        m_bold = re.match(r"^\*\*([^*]+)\*\*$", stripped)
+        if m_bold:
+            flush_para(); flush_list(); flush_table()
+            blocks.append({"type": "heading", "level": 2, "text": m_bold.group(1).strip()})
+            continue
+        if cols is None and re.match(r"^[-*]\s+", stripped):
+            flush_para()
+            items.append(_clean_block_text(stripped[2:]))
+            continue
+        if cols is None and re.match(r"^\d+\.\s+", stripped):
+            flush_para()
+            items.append(_clean_block_text(re.sub(r"^\d+\.\s+", "", stripped)))
+            continue
+        if re.match(r"^(\|.+\|)\s*$", stripped):
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            if cols is None:
+                if re.match(r"^[\s:|-]+$", stripped) and len(cells) >= 1:
+                    cols = ["col%d" % i for i in range(len(cells))]
+                else:
+                    cols = [_clean_block_text(c) for c in cells]
+            elif re.match(r"^[\s:|-]+$", stripped):
+                continue  # the |---| separator row
+            else:
+                rows.append([_clean_block_text(c) for c in cells[:len(cols)]])
+            continue
+        if cols is not None and stripped:
+            rows.append([_clean_block_text(c) for c in stripped.split("|")[:len(cols)]])
+            continue
+        flush_list(); flush_table()
+        if not stripped:
+            flush_para()
+            continue
+        para.append(stripped)
+    flush_para(); flush_list(); flush_table()
+    return blocks
+
+
 def _fallback_blocks(text: str) -> list[dict]:
-    """Plain prose as blocks: readable even when the protocol was ignored."""
-    paras = [p.strip() for p in re.split(r"\n{2,}", text.strip()) if p.strip()]
-    return [{"type": "p", "text": _clean_block_text(p)} for p in paras] or \
-        [{"type": "p", "text": text.strip()}]
+    """A non-protocol answer, still rendered properly: markdown-ish text is
+    converted to typed blocks — never a raw dump with literal '###'."""
+    return _markdown_to_blocks(text)
+
+
+def _answer_needs_format_retry(text: str) -> bool:
+    """True when the model clearly wrote block-level markdown instead of
+    following the JSON protocol — one corrective round is worth it."""
+    if '"blocks"' in text:
+        return False  # it tried; the retry branch elsewhere handles misses
+    first = text.lstrip()[:400]
+    return bool(re.match(r"^#{1,6}\s", first)
+                or re.match(r"^\|.+\|", first, re.M)
+                or re.search(r"(?m)^#{1,6}\s", first)
+                or re.search(r"(?m)^\|\s*-{2,}", first))
 
 
 def blocks_to_text(blocks: list[dict]) -> str:

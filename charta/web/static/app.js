@@ -342,8 +342,16 @@ function md(text){
     +'</tbody></table></div>');
    continue;
   }
-  const h=L.match(/^\s*(#{1,4})\s+(.+)$/);
-  if(h){flushList();out.push('<h'+(h[1].length+2)+'>'+mdInline(h[2].replace(/\*+/g,''))+'</h'+(h[1].length+2)+'>');continue;}
+  const h=L.match(/^\s*(#{1,6})\s*(.+)$/);
+  if(h){flushList();
+   // # and ## are big headline material; ### and deeper are section headers.
+   // Every level gets its own visible style — a heading must never fall back
+   // to looking like plain text with the hashes still in it.
+   const lv=h[1].length<=2?3:h[1].length===3?4:5;
+   out.push('<h'+lv+'>'+mdInline(h[2].replace(/\*+/g,''))+'</h'+lv+'>');continue;}
+  // Models often write "headings" as a fully bolded line; give them that.
+  const boldLine=L.match(/^\s*\*\*([^*]+)\*\*\s*$/);
+  if(boldLine){flushList();out.push('<h4>'+mdInline(boldLine[1])+'</h4>');continue;}
   if(/^\s*[-*]\s+/.test(L)){if(!inList){out.push('<ul>');inList=true;}out.push('<li>'+mdInline(L.replace(/^\s*[-*]\s+/,''))+'</li>');continue;}
   if(/^\s*\d+\.\s+/.test(L)){if(!inList){out.push('<ul>');inList=true;}out.push('<li>'+mdInline(L.replace(/^\s*\d+\.\s+/,''))+'</li>');continue;}
   flushList();

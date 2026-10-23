@@ -467,3 +467,40 @@ def test_the_ask_page_has_one_ask_function_per_name():
     assert "askOnce(" in ask and "watchJob(j.job,(done)" not in ask
     ask_in = src[src.index("window.askIn="):src.index("window.openFile=")]
     assert "askOnce(" in ask_in
+
+
+def test_markdown_headings_render_as_real_headlines():
+    """'### Title' must become a visible headline, never literal hashes.
+    The regex must allow a missing space after the hashes, and every heading
+    level must have its own CSS (h5 used to be unstyled, so ### looked like
+    plain small text even when it parsed)."""
+    src = (pathlib.Path(__file__).parent.parent / "charta" / "web" / "static"
+           / "app.js").read_text(encoding="utf-8")
+    assert re.search(r"\(\\?#\{1,6\}\)\\s\*\(", src), "heading regex lost its no-space tolerance"
+    css = (pathlib.Path(__file__).parent.parent / "charta" / "web" / "static"
+           / "app.css").read_text(encoding="utf-8")
+    for tag in ("h3", "h4", "h5"):
+        assert f".msg.rich {tag}{{" in css, f"{tag} has no headline style"
+    # If node exists, execute md() end to end — the strongest check.
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        return  # source assertions above still guard the regression
+    script = """
+const fs=require('fs');
+const src=fs.readFileSync(process.argv[1],'utf8');
+const grab=(a,b)=>src.slice(src.indexOf(a),src.indexOf(b));
+const escHtml=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+eval(grab('function mdInline(','window.revealCite'));
+const out=md(['## Summary','###NoSpace','####Deep','**Bold heading**'].join('\\n'));
+if(!/<h3>Summary<\\/h3>/.test(out))throw new Error('## broken');
+if(!/<h4>NoSpace<\\/h4>/.test(out))throw new Error('### without space still literal');
+if(!/<h5>Deep<\\/h5>/.test(out))throw new Error('#### broken');
+if(/#{2,6}/.test(out))throw new Error('hashes leak into the answer');
+console.log('ok');
+"""
+    js = pathlib.Path(__file__).parent.parent / "charta" / "web" / "static" / "app.js"
+    r = subprocess.run([node, "-e", script, str(js)], capture_output=True, text=True)
+    assert r.returncode == 0 and "ok" in r.stdout, f"md() failed: {r.stderr}"

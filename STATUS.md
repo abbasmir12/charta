@@ -41,6 +41,19 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-23: **`###` now renders as a real headline.** Two causes: the
+  heading regex required a space after the hashes (`###Title` fell through
+  and showed literally), and matched `###` mapped to `h5`, which had no CSS
+  — so it looked like plain small text. The renderer now takes 1–6 hashes
+  with an optional space, maps `#`/`##` → h3 (subtitle-size headline),
+  `###` → h4 (body-size with a rule underneath), `####`+ → h5 (small caps),
+  and treats a fully bolded line as a heading (models do that). A pytest
+  executes md() via node when available and asserts hashes never leak into
+  the rendered HTML. Files: `charta/web/static/app.js`, `app.css`,
+  `tests/test_web_ui.py`. Verified: `pytest -q` 227 passed; node run of
+  md() over mixed headings.
+
+
 - 2026-10-23: **the ask experience rebuilt around how modern AI apps behave**
   (researched: Perplexity/Claude-style streaming work, in-place accordions,
   markdown answers). The question now streams its work over Server-Sent

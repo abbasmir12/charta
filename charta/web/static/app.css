@@ -195,8 +195,14 @@ table.grid tbody tr:hover td{background:var(--raised)}
 
 /* markdown answers: readable, with the folder's own things highlighted */
 .msg.rich{max-width:760px;line-height:1.65;font-size:var(--fs-body)}
-.msg.rich h3,.msg.rich h4{margin:var(--s3) 0 var(--s1);font-weight:600;
-  color:var(--text);letter-spacing:-.01em}
+.msg.rich h3{margin:var(--s3) 0 var(--s2);font-size:var(--fs-subtitle);
+  font-weight:600;color:var(--text);letter-spacing:-.01em}
+.msg.rich h4{margin:var(--s3) 0 var(--s1);font-size:var(--fs-body);
+  font-weight:600;color:var(--text);padding-bottom:var(--s1);
+  border-bottom:1px solid var(--border)}
+.msg.rich h5{margin:var(--s3) 0 var(--s1);font-size:var(--fs-sm);
+  font-weight:600;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.07em}
 .msg.rich p{margin:0 0 var(--s2)}
 .msg.rich ul{margin:0 0 var(--s2);padding-left:var(--s4)}
 .msg.rich li{margin:0 0 var(--s1)}

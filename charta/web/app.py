@@ -30,7 +30,7 @@ from ..core import record
 from ..core import tools
 from ..core import watchlist
 from ..core.ask import answer_query, build_index, index_signature
-from ..core.agent import TOOL_SPECS, ask_with_tools, parse_ai_lines
+from ..core.agent import TOOL_SPECS, ask_with_tools, structured_answer
 
 TOOL_HINT = ("search_index looks through the folder's metadata (names, descriptions, "
              "tags, dates, amounts); read_file reads one file; list_files shows what "
@@ -1543,10 +1543,11 @@ def _run_ask(job: Job, folder: str, question: str) -> None:
         agent = ask_with_tools(question, folder, client, steps=steps)
         for s in steps:
             job.step(s["kind"], s["text"])
-        # Organisation lines the model added (moves / gaps) are not prose:
-        # they become Review proposals and AI-gap notes, both awaiting the user.
+        # The answer arrives in the strict blocks protocol; organisation
+        # lines (moves / gaps) are separate — they become Review proposals
+        # and AI-gap notes, both awaiting the user.
         if agent.answer:
-            cleaned, ai_gaps, new_props = parse_ai_lines(agent.answer)
+            cleaned, job.blocks, ai_gaps, new_props = structured_answer(agent.raw or agent.answer)
             job.answer = cleaned
             if new_props:
                 for prop in new_props:
@@ -1561,9 +1562,9 @@ def _run_ask(job: Job, folder: str, question: str) -> None:
                                       "at": datetime.datetime.now().isoformat(timespec="seconds")})
                 save_ai_gaps(folder, known)
                 job.step("work", f"Noticed {len(ai_gaps)} gap(s) in this folder.")
-        cited = bool(re.search(r"\[[^\]]+\s+p\d+\]", agent.answer or ""))
+        cited = bool(re.search(r"\[[^\]]+\s+p\d+\]", agent.raw or agent.answer or ""))
         if agent.answer and (agent.used_tools or cited):
-            job.answer = agent.answer
+            pass  # job.answer already holds the cleaned blocks text
             job.citations = [{"file": c.file, "page": c.page} for c in agent.citations]
             job.extra.update({"tools": [c.name for c in agent.calls],
                               "files": len(idx), "provider": cfg.llm_provider,
@@ -1576,9 +1577,10 @@ def _run_ask(job: Job, folder: str, question: str) -> None:
         ans = answer_query(question, idx, client, steps=steps2)
         for s in steps2:
             job.step(s["kind"], s["text"])
-        job.answer = ans.text or (
+        fallback = ans.text or (
             "I could not find anything about that in this folder. "
             "Try a vendor, a year or an amount from the file name.")
+        job.answer, job.blocks, _, _ = structured_answer(fallback)
         job.citations = [{"file": c.file, "page": c.page} for c in ans.citations]
         job.state = "done"
         job.extra.update({"files": len(idx), "provider": cfg.llm_provider,
@@ -1635,6 +1637,7 @@ class Job:
     state: str = "running"
     steps: list[dict] = field(default_factory=list)
     answer: str = ""
+    blocks: list[dict] = field(default_factory=list)
     citations: list[dict] = field(default_factory=list)
     error: str = ""
     extra: dict = field(default_factory=dict)
@@ -1646,6 +1649,7 @@ class Job:
     def as_dict(self) -> dict:
         return {"job": self.id, "kind": self.kind, "state": self.state,
                 "steps": list(self.steps), "answer": self.answer,
+                "blocks": list(self.blocks),
                 "citations": list(self.citations), "error": self.error,
                 **self.extra}
 

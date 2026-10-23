@@ -174,3 +174,40 @@ def test_a_gapped_answer_still_clean():
     clean, gaps, props = parse_ai_lines("FINAL: plain answer, no organisation lines")
     assert clean == "plain answer, no organisation lines"
     assert not gaps and not props
+
+
+def test_the_answer_protocol_validates_blocks_and_never_leaks_hashes():
+    """The FINAL line is strict blocks JSON: validated, cleaned, and any
+    markdown the model added inside block text is stripped."""
+    import json as j
+
+    from charta.core.agent import structured_answer
+
+    payload = j.dumps({"blocks": [
+        {"type": "heading", "level": 1, "text": "### Rent overview"},
+        {"type": "facts", "entries": [{"label": "Total", "value": "900 EUR"}]},
+        {"type": "table", "columns": ["Month", "Paid"],
+         "rows": [["2026-03", "900 EUR"]]},
+        {"type": "list", "items": ["### bullet one"]},
+        {"type": "p", "text": "See [rent.txt p1]."},
+    ]})
+    text = f"FINAL: {payload}\nGAP: no June receipt"
+    clean, blocks, gaps, props = structured_answer(text)
+    assert [b["type"] for b in blocks] == ["heading", "facts", "table", "list", "p"]
+    assert blocks[0]["text"] == "Rent overview"
+    assert blocks[3]["items"] == ["bullet one"]
+    assert "###" not in j.dumps(blocks)
+    assert gaps == ["no June receipt"] and not props
+    # the plain text keeps citations for the citation detector
+    assert "[rent.txt p1]" in clean
+
+
+def test_a_protocol_miss_degrades_to_clean_blocks_not_raw_markdown():
+    """Even a completely off-protocol answer renders safely: no literal
+    hashes, tables or pipes can leak into a heading again."""
+    from charta.core.agent import structured_answer
+
+    clean, blocks, _, _ = structured_answer(
+        "FINAL: ### oops\n## not json at all")
+    assert all(b["type"] == "p" for b in blocks)
+    assert "###" not in clean and "##" not in clean

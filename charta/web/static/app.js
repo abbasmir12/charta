@@ -365,6 +365,34 @@ function md(text){
  html=html.replace(/\x00F(\d+)\x00/g,(m,i)=>'<pre class="mono">'+fences[+i]+'</pre>');
  return html;
 }
+// The answer protocol: the model sends validated typed blocks, and this
+// renders them directly — no parsing of model text, so raw "###" or table
+// pipes can never appear. Text inside a block still keeps its Charta
+// touches: **bold**, [file pN] citations, highlighted dates and amounts.
+function mdBlocks(text){return mdInline(escHtml(text||''));}
+function renderBlocks(blocks){
+ return (blocks||[]).map(b=>{
+  if(b.type==='heading'){
+   const t=(b.level===1)?'h3':(b.level===2)?'h4':'h5';
+   return '<'+t+'>'+mdBlocks(String(b.text||'').replace(/^#{1,6}\s*/,'').replace(/\*\*/g,''))+'</'+t+'>';
+  }
+  if(b.type==='list'){
+   return '<ul>'+(b.items||[]).map(i=>'<li>'+mdBlocks(i)+'</li>').join('')+'</ul>';
+  }
+  if(b.type==='table'){
+   const cols=b.columns||[];
+   const head=cols.map(c=>'<th>'+mdBlocks(c)+'</th>').join('');
+   const body=(b.rows||[]).map(r=>'<tr>'+cols.map((c,i)=>'<td>'+mdBlocks(r[i]||'')+'</td>').join('')+'</tr>').join('');
+   return '<div class="tblwrap"><table><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table></div>';
+  }
+  if(b.type==='facts'){
+   return '<div class="facts">'+(b.entries||[]).map(e=>
+    '<div class="fact"><span class="k">'+mdBlocks(e.label)+'</span>'
+    +'<span class="v mono">'+mdBlocks(e.value)+'</span></div>').join('')+'</div>';
+  }
+  return '<p>'+mdBlocks(b.text)+'</p>';
+ }).join('\n');
+}
 window.revealCite=(b64,p)=>{
  const name=decodeURIComponent(b64);
  toast('Opening '+name);
@@ -455,7 +483,8 @@ function renderAnswer(j){
  msg.className='msg ai fadein rich';
  const meta=j.files?(' · '+j.files+' file(s)'+(j.cached?' (already read)':'')+' · '+escHtml(j.model||'')):'';
  const body=(j.answer||'').trim();
- msg.innerHTML=(body?md(body):'<p>No answer came back — expand the work above to see where it stopped.</p>')
+ msg.innerHTML=((j.blocks&&j.blocks.length)?renderBlocks(j.blocks)
+  :(body?md(body):'<p>No answer came back — expand the work above to see where it stopped.</p>'))
   +(meta?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+meta+'</p>':'')
   +(cites?'<div class="row" style="margin-top:var(--s2)">'+cites+'</div>':'');
  log.appendChild(msg);msg.scrollIntoView({block:'end',behavior:'smooth'});

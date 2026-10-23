@@ -24,6 +24,9 @@ import json
 import pathlib
 import re
 from dataclasses import dataclass, field
+from typing import Literal
+
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from . import index_db
 from .ask import Citation, chunk_text
@@ -67,17 +70,26 @@ How to work:
    or
    {{"tool":"read_file","args":{{"path":"Receipts/receipt_edf.txt"}}}}
 3. Use the results to pick the files worth reading, then read them.
-4. When you can answer, format the final answer in Markdown — short
-   paragraphs, **bold** for the key facts, a table when comparing, and keep
-   exact dates and amounts. Cite every file you used like [file.txt p1].
-   Never invent a fact. If the folder does not contain the answer, say so
-   plainly.
-5. The last line of your final answer must be exactly:
-   FINAL: <your answer>
+4. When you can answer, your final answer must be ONE JSON object with a
+   "blocks" array that describes the answer for display. Plain text only —
+   never use markdown symbols like ### or | or ** inside these strings.
+   Use ONLY these block shapes:
+   {{"type":"heading","level":1,"text":"Big title"}}
+     (level 1: main headline, 2: section headline, 3: small side heading)
+   {{"type":"p","text":"One paragraph. Keep exact dates and amounts."}}
+   {{"type":"list","items":["point one","point two"]}}
+   {{"type":"table","columns":["What","Value"],"rows":[["Rent","900 EUR"]]}}
+   {{"type":"facts","entries":[{{"label":"Amount","value":"2500 EUR"}}]}}
+   Guide: key figures go in a facts block, comparisons in a table, steps or
+   points in a list, everything else in p blocks. Cite the files you used
+   inside the text, like [file.txt p1]. Never invent a fact. If the folder
+   does not contain the answer, say so plainly in a p block.
+5. The last line of your answer must be exactly:
+   FINAL: {{"blocks":[...]}}
 
-6. You may also help organise the folder — propose only, never claim you
-   changed anything; the user approves in Review. Add these lines at the very
-   end of your final answer, one per line, only when genuinely helpful:
+6. After that FINAL line, you may help organise the folder — propose only,
+   never claim you changed anything; the user approves in Review. Add these
+   lines, one per line, only when genuinely helpful:
    RENAME: current_file.txt -> clearer_name.txt
    MOVE: file.txt -> Subfolder/          (creates the folder if needed)
    GAP: what is missing from this folder (e.g. "no electricity bill for March")
@@ -97,6 +109,8 @@ class ToolCall:
 @dataclass
 class AgentResult:
     answer: str = ""
+    blocks: list[dict] = field(default_factory=list)
+    raw: str = ""  # the model\'s final text as sent (protocol + org lines)
     citations: list[Citation] = field(default_factory=list)
     calls: list[ToolCall] = field(default_factory=list)
     used_tools: bool = False
@@ -234,6 +248,7 @@ def ask_with_tools(question: str, folder: str | pathlib.Path, client: LLMClient,
     calls: list[ToolCall] = []
     used_files: list[str] = []
     answer = ""
+    retried_json = False
     for round_no in range(rounds):
         try:
             res = client.chat(messages, system=system)
@@ -247,6 +262,22 @@ def ask_with_tools(question: str, folder: str | pathlib.Path, client: LLMClient,
         action = _json_action(text)
         if not action:
             answer = strip_tool_calls(text)
+            # The protocol asks for a blocks JSON. If the model clearly tried
+            # it and missed, one corrective round — then graceful fallback.
+            _, blocks, _, _ = structured_answer(answer)
+            looks_json = '"blocks"' in answer
+            if looks_json and blocks and blocks[0].get("type") == "p" \
+                    and len(blocks) == 1 and round_no < rounds - 1 and not retried_json:
+                retried_json = True
+                answer = ""
+                note("warn", "The answer was not the asked JSON shape — asking once more.")
+                messages.append({"role": "assistant", "content": text})
+                messages.append({"role": "user", "content":
+                                 "That FINAL line was not valid blocks JSON. Send the answer "
+                                 "again as one line, exactly: "
+                                 "FINAL: {\"blocks\":[...]} — using only the block shapes "
+                                 "from the instructions. Nothing else on that line."})
+                continue
             note("done", "Answer ready.")
             break
         name, args = action
@@ -264,14 +295,14 @@ def ask_with_tools(question: str, folder: str | pathlib.Path, client: LLMClient,
         messages.append({"role": "user",
                          "content": f"Tool result:\n{result}\n\n"
                                     "Continue: call another tool, or give the final answer "
-                                    "(last line: FINAL: <your answer>)."})
+                                    "(last line: FINAL: {\"blocks\":[...]})."})
     # The model may still be asking for tools when the rounds run out. Ask it
     # for the answer explicitly, so the user is never left with a tool call.
     if not answer and calls:
         note("work", "Asking the model to answer with what it has.")
         messages.append({"role": "user",
                          "content": "Give the final answer now, using what you have found. "
-                                    "Do not call any more tools. Last line: FINAL: <your answer>"})
+                                    "Do not call any more tools. Last line: FINAL: {\"blocks\":[...]}"})
         try:
             res = client.chat(messages, system=system)
             answer = strip_tool_calls((res.text or "").strip())
@@ -284,7 +315,8 @@ def ask_with_tools(question: str, folder: str | pathlib.Path, client: LLMClient,
     result = AgentResult(answer=answer, calls=calls,
                           used_tools=bool(calls), files=used_files)
     if answer:
-        result.answer = _clean_final(answer)
+        result.raw = answer
+        result.answer, result.blocks, _, _ = structured_answer(answer)
         result.citations = _citations(folder, used_files)
     return result
 
@@ -340,6 +372,141 @@ def parse_ai_lines(text: str) -> tuple[str, list[str], list["Proposal"]]:
         prose.append(raw)
     cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(prose)).strip()
     return cleaned, gaps, props
+
+
+# --- the answer protocol ----------------------------------------------------
+# The model answers in a strict format: FINAL: {"blocks":[...]}. The blocks
+# are validated with Pydantic, so the UI renders typed content it can trust
+# and raw markdown can never leak into the answer, whatever the model writes.
+class HeadingBlock(BaseModel):
+    type: Literal["heading"]
+    level: int = 1
+    text: str
+
+
+class ParaBlock(BaseModel):
+    type: Literal["p"]
+    text: str
+
+
+class ListBlock(BaseModel):
+    type: Literal["list"]
+    items: list[str]
+
+
+class TableBlock(BaseModel):
+    type: Literal["table"]
+    columns: list[str] = []
+    rows: list[list[str]] = []
+
+
+class FactItem(BaseModel):
+    label: str
+    value: str
+
+
+class FactsBlock(BaseModel):
+    type: Literal["facts"]
+    entries: list[FactItem]
+
+
+Block = HeadingBlock | ParaBlock | ListBlock | TableBlock | FactsBlock
+
+_HASH = re.compile(r"^#{1,6}\s*")
+
+
+def _clean_block_text(text: str) -> str:
+    """No markdown artifacts survive into a block's text."""
+    lines = [_HASH.sub("", line).replace("**", "") for line in text.splitlines()]
+    return "\n".join(lines).strip()
+
+
+def _validate_blocks(raw: object) -> list[dict] | None:
+    """The model's blocks list, validated — or None if it does not conform."""
+    if not isinstance(raw, list) or not raw:
+        return None
+    out: list[dict] = []
+    try:
+        for item in raw:
+            b = TypeAdapter(Block).validate_python(item)
+            if b.type == "heading":
+                out.append({"type": "heading",
+                            "level": min(max(b.level, 1), 3),
+                            "text": _clean_block_text(b.text)})
+            elif b.type == "p":
+                out.append({"type": "p", "text": _clean_block_text(b.text)})
+            elif b.type == "list":
+                out.append({"type": "list",
+                            "items": [_clean_block_text(i) for i in b.items]})
+            elif b.type == "table":
+                out.append({"type": "table",
+                            "columns": [_clean_block_text(c) for c in b.columns],
+                            "rows": [[_clean_block_text(c) for c in row]
+                                     for row in b.rows]})
+            else:
+                out.append({"type": "facts",
+                            "entries": [{"label": _clean_block_text(e.label),
+                                         "value": _clean_block_text(e.value)}
+                                        for e in b.entries]})
+    except ValidationError:
+        return None
+    if not any(b.get("text") or b.get("items") or b.get("rows")
+               or b.get("entries") for b in out):
+        return None
+    return out
+
+
+def _fallback_blocks(text: str) -> list[dict]:
+    """Plain prose as blocks: readable even when the protocol was ignored."""
+    paras = [p.strip() for p in re.split(r"\n{2,}", text.strip()) if p.strip()]
+    return [{"type": "p", "text": _clean_block_text(p)} for p in paras] or \
+        [{"type": "p", "text": text.strip()}]
+
+
+def blocks_to_text(blocks: list[dict]) -> str:
+    """The answer as plain text (citation detection, logs, tests)."""
+    parts: list[str] = []
+    for b in blocks:
+        if b["type"] == "heading":
+            parts.append(b["text"])
+        elif b["type"] == "p":
+            parts.append(b["text"])
+        elif b["type"] == "list":
+            parts.extend(b["items"])
+        elif b["type"] == "table":
+            parts.extend(" | ".join(r) for r in b["rows"])
+        elif b["type"] == "facts":
+            parts.extend(f"{e['label']}: {e['value']}" for e in b["entries"])
+    return "\n\n".join(p for p in parts if p)
+
+
+def structured_answer(text: str) -> tuple[str, list[dict], list[str], list[Proposal]]:
+    """Parse the final answer once, in one place.
+
+    The FINAL line may carry the strict blocks JSON; the lines after it may
+    carry RENAME/MOVE/GAP organisation lines. Anything the model got wrong
+    degrades to clean plain-text blocks — never to raw markdown in the UI.
+    """
+    text = re.sub(r"^\s*FINAL:\s*", "", text.strip())
+    blocks: list[dict] | None = None
+    remainder = text
+    start = text.find("{")
+    if start >= 0:
+        try:
+            obj, end = json.JSONDecoder().raw_decode(text[start:])
+            if isinstance(obj, dict):
+                blocks = _validate_blocks(obj.get("blocks"))
+                if blocks is not None:
+                    remainder = (text[:start] + text[start + end:]).strip()
+        except ValueError:
+            blocks = None  # fall through to the plain-text path below
+    org_text, gaps, props = parse_ai_lines(remainder)
+    if blocks is None:
+        blocks = _fallback_blocks(org_text)
+        clean = re.sub(r"\n{3,}", "\n\n", blocks_to_text(blocks)).strip()
+    else:
+        clean = blocks_to_text(blocks)
+    return clean, blocks, gaps, props
 
 
 def _citations(folder: str | pathlib.Path, files: list[str]) -> list[Citation]:

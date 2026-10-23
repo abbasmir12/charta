@@ -504,3 +504,77 @@ console.log('ok');
     js = pathlib.Path(__file__).parent.parent / "charta" / "web" / "static" / "app.js"
     r = subprocess.run([node, "-e", script, str(js)], capture_output=True, text=True)
     assert r.returncode == 0 and "ok" in r.stdout, f"md() failed: {r.stderr}"
+
+
+def test_the_blocks_protocol_reaches_the_browser(client, tmp_path, monkeypatch):
+    """A model answering in the strict JSON protocol produces validated
+    blocks on the job payload the SSE stream and UI consume."""
+    import json as j
+    from types import SimpleNamespace
+
+    import charta.web.app as web_app
+
+    payload = j.dumps({"blocks": [
+        {"type": "heading", "level": 1, "text": "### Answer"},
+        {"type": "facts", "entries": [{"label": "Rent", "value": "900 EUR"}]},
+        {"type": "p", "text": "details [f.txt p1]"},
+    ]})
+
+    def fake(question, folder, llm_client, steps=None, rounds=5):
+        if steps is not None:
+            steps.append({"kind": "done", "text": "Answer ready."})
+        raw = f"FINAL: {payload}"
+        return SimpleNamespace(answer=web_app.structured_answer(raw)[0],
+                               blocks=web_app.structured_answer(raw)[1],
+                               raw=raw, citations=[],
+                               calls=[], used_tools=True, files=["f.txt"])
+
+    monkeypatch.setattr(web_app, "ask_with_tools", fake)
+    monkeypatch.setattr(web_app, "answer_query",
+                        lambda *a, **k: SimpleNamespace(
+                            text="should not be used", citations=[]))
+    (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+    body = client.post("/api/ask", params={"folder": str(tmp_path)},
+                       json={"q": "what?"}).json()
+    done = _wait_job(client, body["job"])
+    assert done["state"] == "done"
+    types = [b["type"] for b in done["blocks"]]
+    assert types == ["heading", "facts", "p"]
+    assert "###" not in j.dumps(done["blocks"])
+    assert done["blocks"][0]["text"] == "Answer"
+
+
+def test_the_renderer_builds_blocks_without_parsing_model_markdown():
+    """renderBlocks: typed JSON in, styled HTML out — hashes cannot leak."""
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not available")
+    script = """
+const fs=require('fs');
+const src=fs.readFileSync(process.argv[1],'utf8');
+const grab=(a,b)=>src.slice(src.indexOf(a),src.indexOf(b));
+const escHtml=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const toast=()=>{};const folder=()=>'';const revealFile=()=>{};
+eval(grab('function mdInline(','window.revealCite'));
+const out=renderBlocks([
+ {type:'heading',level:1,text:'### Rent overview'},
+ {type:'facts',entries:[{label:'Total',value:'900 EUR'}]},
+ {type:'table',columns:['Month','Paid'],rows:[['2026-03','900 EUR']]},
+ {type:'list',items:['point']},
+ {type:'p',text:'why **now** [f.txt p1]'}
+]);
+if(!/<h3>Rent overview<\\/h3>/.test(out))throw new Error('heading broken: '+out.slice(0,120));
+if(!/<div class="facts">/.test(out))throw new Error('facts broken');
+if(!/<table>/.test(out))throw new Error('table broken');
+if(/#{2,6}/.test(out))throw new Error('hashes leak');
+if(!/hl-amount/.test(out))throw new Error('amount highlight lost');
+console.log('ok');
+"""
+    js = (pathlib.Path(__file__).parent.parent / "charta" / "web"
+          / "static" / "app.js")
+    r = subprocess.run([node, "-e", script, str(js)],
+                       capture_output=True, text=True)
+    assert r.returncode == 0 and "ok" in r.stdout, f"renderBlocks failed: {r.stderr}"

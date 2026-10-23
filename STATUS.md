@@ -41,6 +41,24 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-23: **answers now follow a strict JSON blocks protocol.** The
+  model's final answer must be `FINAL: {"blocks":[...]}` with typed blocks
+  only (heading 1–3 / p / list / table / facts), validated with Pydantic in
+  `agent.py` (`structured_answer`); markdown artifacts (`###`, `**`, pipes)
+  are stripped from block text server-side, so they can never reach the
+  answer. The UI (`renderBlocks`) renders typed blocks directly instead of
+  parsing model markdown, and the md() renderer remains only as fallback.
+  De-protocol answers degrade to clean plain-paragraph blocks (never raw
+  markdown), one corrective retry when the model tries JSON but misses, and
+  the double-parse bug (agent flattened the answer, then _run_ask re-parsed
+  the flattened text) was fixed by keeping `AgentResult.raw`. RENAME/MOVE/
+  GAP lines after the FINAL line still become proposals and AI gaps.
+  Files: `charta/core/agent.py`, `charta/web/app.py`, `app.js`, `app.css`,
+  `tests/test_agent.py`, `tests/test_web_ui.py`. Verified: `pytest -q`
+  231 passed; end-to-end run with a scripted model produced heading/facts/
+  p/table/list blocks with zero hashes.
+
+
 - 2026-10-23: **`###` now renders as a real headline.** Two causes: the
   heading regex required a space after the hashes (`###Title` fell through
   and showed literally), and matched `###` mapped to `h5`, which had no CSS
@@ -455,6 +473,14 @@ pass and a recorded before/after demo.
   works with zero extra installs?
 
 ## Decisions
+
+- 2026-10-23: answer rendering moved from "parse whatever markdown the
+  model wrote" to a model-driven blocks protocol (`FINAL: {"blocks":[...]}`,
+  Pydantic-validated, five block types). Why: the model kept emitting
+  block-level markdown the small local renderer could not fully cover
+  (`###`, raw tables), and tolerant parsing is an arms race — typed content
+  removes the parsing entirely; graceful fallback keeps answers flowing.
+
 
 - 2026-10-20: Retrieval is keyword/BM25 + regex, not embeddings. Why: it removes a
   second model and a vector store, works with every provider (including ones with

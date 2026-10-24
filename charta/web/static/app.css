@@ -337,6 +337,10 @@ table.grid tbody tr:hover td{background:var(--raised)}
   .stat:nth-child(n+3){border-top:1px solid var(--border)}
 }
 
+/* approving: the card settles, fades and slides out — approval feels final */
+.prop-card.approved{opacity:0;transform:translateX(24px) scale(.98);pointer-events:none;
+  transition:opacity var(--t-base) var(--ease),transform var(--t-base) var(--ease)}
+
 /* outputs: one honest card per output kind, with its own story */
 .outgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
   gap:var(--s4)}

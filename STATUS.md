@@ -41,6 +41,17 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-23: **Review approve now feels final in the UI.** Approving used
+  to post the request, dim the *first* card (not the one you acted on) and
+  show a toast — the card stayed, unlike Reject which reloaded. Each card
+  now carries its proposal (`data-src`); approving targets that card,
+  animates it out (opacity + slide), updates the selection and the
+  "N left in review" toast, and when the queue empties reloads into the
+  "All clear" state. Tests lock in the data-src wiring and the removal
+  behaviour. Files: `charta/web/app.py`, `app.js`, `app.css`,
+  `tests/test_web_ui.py`. Verified: `pytest -q` 233 passed.
+
+
 - 2026-10-23: **off-protocol answers no longer dump raw markdown** (user
   screenshot showed '###' mid-line and a pasted form dump rendered as one
   giant paragraph). The fallback path is now a real markdown→blocks

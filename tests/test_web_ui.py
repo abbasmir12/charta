@@ -578,3 +578,25 @@ console.log('ok');
     r = subprocess.run([node, "-e", script, str(js)],
                        capture_output=True, text=True)
     assert r.returncode == 0 and "ok" in r.stdout, f"renderBlocks failed: {r.stderr}"
+
+
+def test_approving_removes_the_right_card_from_review(client, tmp_path):
+    """Approve used to dim the first card and leave everything in place —
+    only a toast showed. The card must know its proposal, and approving
+    must animate the card out and update the queue."""
+    src_py = (pathlib.Path(__file__).parent.parent / "charta" / "web"
+              / "app.py").read_text(encoding="utf-8")
+    assert 'data-src="{escape_attr(p.source)}"' in src_py, \
+        "each review card must carry the proposal it belongs to"
+    src = (pathlib.Path(__file__).parent.parent / "charta" / "web" / "static"
+           / "app.js").read_text(encoding="utf-8")
+    approve = src[src.index("window.approveOne"):src.index("window.rejectOne")]
+    assert "data-src" in approve, "approve must target the card of the source"
+    assert ".remove()" in approve, "the approved card must be removed"
+    assert "location.reload()" in approve, "last card leaves -> all-clear state"
+    assert "classList.add('approved')" in approve, "the card must animate out"
+    css = (pathlib.Path(__file__).parent.parent / "charta" / "web" / "static"
+           / "app.css").read_text(encoding="utf-8")
+    assert ".prop-card.approved" in css
+    page = client.get("/review", params={"folder": "x"}).text
+    assert "<!doctype html>" in page  # the page itself still renders fine

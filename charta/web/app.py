@@ -977,7 +977,7 @@ def review(folder: str = "") -> str:
     cards = ""
     for p in pending:
         sens = '<span class="badge-sensitive">sensitive</span>' if p.sensitive else ""
-        cards += f"""<div class="card prop-card fadein"><div class="prop">
+        cards += f"""<div class="card prop-card fadein" data-src="{escape_attr(p.source)}"><div class="prop">
 <span class="thumb" aria-hidden="true">{icon("file", 20)}</span><div style="flex:1;min-width:0">
 <div class="mono">{p.source} <span class="dest">→ {p.dest_dir}/{p.new_name}</span></div>
 <div class="conf" role="img" aria-label="confidence {int(p.confidence*100)} percent"><span style="width:{int(p.confidence*100)}%"></span></div>

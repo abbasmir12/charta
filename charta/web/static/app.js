@@ -200,8 +200,25 @@ window.restoreFile=async(f,rel)=>{
   location.reload();
  }catch(err){toast('Could not bring that file back.',false);}
 };
-window.approveOne=async(src)=>{await post('/api/approve?folder='+encodeURIComponent(folder()),{files:[src]});
- const card=document.querySelector('.prop-card');if(card)card.style.opacity='0.4';toast('Approved '+src,true);};
+// Approving must feel final: the card animates out and the queue count
+// updates — not just a toast with the card still sitting there.
+window.approveOne=async(src)=>{
+ try{await post('/api/approve?folder='+encodeURIComponent(folder()),{files:[src]});}
+ catch(err){toast('Could not approve that just now.',false);return;}
+ const all=[...document.querySelectorAll('.prop-card')];
+ const idx=all.findIndex(c=>c.dataset.src===src);
+ const card=document.querySelector('.prop-card[data-src="'+CSS.escape(src)+'"]')||all[0];
+ if(card){
+  card.classList.add('approved');
+  setTimeout(()=>{
+   card.remove();
+   const left=[...document.querySelectorAll('.prop-card')];
+   left.forEach((c,i)=>c.classList.toggle('selected',i===Math.min(Math.max(idx,0),left.length-1)));
+   if(!left.length){location.reload();return;}
+   toast('Approved '+src+' — '+left.length+' left in review',true);
+  },420);
+ }else{toast('Approved '+src,true);}
+};
 window.rejectOne=async(src)=>{await post('/api/reject?folder='+encodeURIComponent(folder()),{files:[src]});location.reload();};
 
 // --- custom dropdowns (native <select> can't be themed or animated) --------

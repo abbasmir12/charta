@@ -41,7 +41,26 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
-- 2026-10-24: **Ask conversations persist, and follow-ups remember what was
+- 2026-10-24: **the Ask page rebuilt around a modern chat layout** (from the
+  user's reference: chat-history sidebar, centred prompt, starter cards).
+  The page is now a full-height app layout: a conversations rail (this
+  folder's saved chats, newest first; below 1100px it folds away) beside a
+  chat pane. Empty state: a centred greeting above the large rounded composer
+  (autogrow textarea, mic button, model chip, solid round send button,
+  Enter asks / Shift+Enter makes a line) with four starter cards underneath —
+  folder inventory, newest files, the charter's expected items, and missing
+  items. Once the conversation starts the greeting disappears, the log
+  scrolls and the composer pins to the bottom, exactly like the reference.
+  Replayed conversations now render their stored source chips too, and the
+  citation chips are shared by live answers and replays (citesHtml). One
+  bug found by browser measurement: the pane toggle used class "live",
+  which the toolbar already styles with max-width:34ch — the whole pane
+  collapsed to 260px once a conversation started; renamed to "chatting".
+  Files: `charta/web/app.py`, `charta/web/static/app.js`, `app.css`,
+  `tests/test_web_ui.py`, `DESIGN.md` (Ask spec refreshed).
+  Verified: `pytest -q` 246 passed; `tools/ui_check.py` 36 screens clean
+  (no overflow, no small targets, no console errors); simulated live
+  conversation screenshotted correct in light and dark. Commit: 36535cd.- 2026-10-24: **Ask conversations persist, and follow-ups remember what was
   asked before.** Each Ask-page conversation is a user-owned file,
   `.charta/chats/<id>.json` (id, created, title = first question's first
   72 characters, one message per exchange with q/answer/blocks/model/

@@ -1066,34 +1066,60 @@ def ask_page(folder: str = "", q: str = "") -> str:
         inner = f"""{page_head("Ask", "Answers cite file and page. If it is not in the folder, Charta says so.")}
 {body}"""
         return shell("ask", folder, inner, mode)
+    # starter cards: what this folder is made for always comes first
+    starter_specs = [("folder", "What is in this folder?",
+                      "An inventory of everything here, with a purpose for it"),
+                     ("sparkles", "Summarise the newest files",
+                      "What just arrived, in a few lines")]
+    if ch and ch.expected:
+        starter_specs.append(("search", f"What about {ch.expected[0]}?",
+                              "The first item the charter expects to find"))
+    starter_specs.append(("alert", "What is missing here?",
+                          "Expected items that have not shown up yet"))
     starters = "".join(
-        f'<button type="button" class="chip" onclick="askFolder({q!r})">{q}</button>'
-        for q in (["What is in this folder?", "Summarise the newest files"]
-                  + ([f"What about {ch.expected[0]}?"] if ch and ch.expected else [])))
+        f'<button type="button" class="starter" onclick="askFolder({t!r})">'
+        f'<span class="starter-icon icon">{icon(ic, 18)}</span>'
+        f'<span class="starter-body"><span class="starter-t">{t}</span>'
+        f'<span class="starter-d">{d}</span></span></button>'
+        for ic, t, d in starter_specs)
     # the folder's saved conversations, ready to reopen and continue
-    saved = chats.list_chats(folder, 12)
-    chat_cards = "".join(
-        f'<button type="button" class="chatcard" data-chat="{escape_attr(c["id"])}" '
-        f'onclick="openChat({c["id"]!r})" title="continue this conversation">'
-        f'<span class="cc-t">{escape_attr(c["title"])}</span>'
-        f'<span class="cc-m">{c["count"]} message(s)</span></button>'
-        for c in saved)
-    inner = f"""{page_head("Ask", f"About {_basename(folder)} — answers cite file and page, and every question remembers the last.",
-                          f'<span class="chip">{cfg.llm_provider} · {cfg.generation_model}</span>')}
-{f'<section class="section"><div class="section-head"><h2 class="section-title">Earlier conversations</h2>'
- f'<div class="section-actions"><button type="button" class="chip" onclick="newChat()">'
- f'{icon("sparkles", 14)} New conversation</button></div></div>'
- f'<div class="chatstrip">{chat_cards}</div></section>' if chat_cards else ''}
-<div class="chatlog" id="log" role="log" aria-live="polite">
-<div class="msg ai">Ask anything about this folder — I show my work as I go, remember
-the conversation, quote the file and page I used, and I won't invent an answer.
-<button type="button" class="chip" onclick="newChat()" style="margin-left:var(--s2)">New conversation</button></div></div><div class="row"><input id="q" type="text" aria-label="Your question" placeholder="e.g. What electricity bills do we have for March?" value="{escape_attr(q)}">
-<button type="button" class="btn btn-icon" onclick="toggleMic('q')" aria-label="Ask by voice">{icon("mic", 18)}</button>
-<button type="button" class="btn btn-primary" onclick="askFolder()"><span class="icon">{icon("arrow-right", 16)}</span> Ask</button></div>
-<div class="row" style="margin-top:var(--s3)">{starters}</div>
-<p class="askbuild muted" style="margin-top:var(--s3)"><button type="button" class="chip" onclick="copyDiag()">Copy diagnostics</button>
-<span class="muted"> — if an answer never arrives, paste what that gives you.</span>
-<span class="muted mono" style="margin-left:var(--s3)">code {_code_revision()} · backend started {_STARTED}</span></p>"""
+    saved = chats.list_chats(folder, 14)
+    conv_items = "".join(
+        f'<button type="button" class="conv-item" data-chat="{escape_attr(c["id"])}" '
+        f'onclick="openChat(this.dataset.chat)" title="continue this conversation">'
+        f'<span class="cv-t">{escape_attr(c["title"])}</span>'
+        f'<span class="cv-m">{c["count"]} message(s)</span></button>'
+        for c in saved) or (
+        '<p class="cv-empty muted">No conversations yet — your first question '
+        'starts one, and it stays in this folder.</p>')
+    runs_chip = (f'<span class="chip" title="Where the answers come from.">'
+                 f'<span class="icon">{icon("shield" if cfg.llm_provider in LOCAL_PROVIDERS else "info", 14)}</span>'
+                 f'{cfg.generation_model}</span>')
+    inner = f"""<div class="askwrap">
+<aside class="convs" aria-label="Earlier conversations">
+<div class="convs-head"><span class="rail-label">Conversations</span>
+<button type="button" class="chip" onclick="newChat()">{icon("sparkles", 14)} New</button></div>
+<div class="conv-list" id="convlist">{conv_items}</div>
+</aside>
+<section class="chatpane" id="chatpane">
+<div class="hero"><span class="hero-mark icon">{icon("sparkles", 22)}</span>
+<h1>What do you want to know about {_basename(folder)}?</h1>
+<p class="sub muted">Answers cite the file and page they came from, every follow-up
+remembers what you asked before, and nothing leaves your machine.</p></div>
+<div class="chatscroll"><div class="chatlog" id="log" role="log" aria-live="polite"></div></div>
+<div class="composerbox"><form class="composer" onsubmit="return chartaAskSubmit(event)">
+<textarea id="q" class="qbox" rows="1" aria-label="Your question"
+placeholder="Ask about this folder — e.g. What electricity bills do we have for March?">{escape_attr(q)}</textarea>
+<div class="composer-row"><div class="row">
+<button type="button" class="btn btn-ghost btn-icon" onclick="toggleMic('q')" aria-label="Ask by voice">{icon("mic", 18)}</button>
+{runs_chip}</div><div class="row">
+<button type="button" class="chip" onclick="copyDiag()">Copy diagnostics</button>
+<button type="submit" class="sendbtn" aria-label="Ask">{icon("arrow-right", 18)}</button></div></div>
+</form>
+<p class="composer-meta muted">Copy diagnostics if an answer never arrives.
+<span class="mono">code {_code_revision()} · backend {_STARTED}</span></p></div>
+<div class="starters" aria-label="Try asking">{starters}</div>
+</section></div>"""
     if q.strip():
         inner += (f'<script>window.addEventListener("load",()=>askFolder('
                   f'{q.strip()!r}));</script>')

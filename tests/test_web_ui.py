@@ -666,16 +666,20 @@ def test_the_dashboard_ask_box_stays_ephemeral(client, tmp_path):
 
 
 def test_the_ask_page_offers_saved_conversations_and_hides_the_tools(client, tmp_path):
-    """The chat strip lists earlier conversations; the tools list is gone."""
+    """A conversations rail, a centred composer, starter cards; tools gone."""
     import charta.core.chats as chats
 
     cid = chats.new_id()
     chats.append_message(tmp_path, cid, "What is in this folder?", "A few notes.")
 
     html = client.get("/ask", params={"folder": str(tmp_path)}).text
-    assert "Earlier conversations" in html
-    assert "chatcard" in html and cid in html
+    assert "Conversations" in html
+    assert "conv-item" in html and cid in html
     assert "newChat" in html
+    # the modern chat layout: greeting centred, large composer, starter cards
+    assert "chatpane" in html and "hero" in html
+    assert "composer" in html and "qbox" in html
+    assert "starter" in html and "What is in this folder?" in html
     assert "Tools the model can call" not in html
     assert "TOOL_HINT" not in html
 

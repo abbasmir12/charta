@@ -415,24 +415,43 @@ function renderBlocks(blocks){
 // (.charta/chats/<id>.json): reopenable, and every follow-up sends the
 // earlier turns back to the model, so "and what about June?" works.
 window.__askChat=null;
+// One conversation rail item — the server's ask page renders the same markup.
+function convMarkup(c){
+ return '<button type="button" class="conv-item'+(c.id===window.__askChat?' active':'')
+  +'" data-chat="'+c.id+'" onclick="openChat(this.dataset.chat)" '
+  +'title="continue this conversation">'
+  +'<span class="cv-t">'+escHtml(c.title)+'</span>'
+  +'<span class="cv-m">'+c.count+' message(s)</span></button>';
+}
+// The answer's source chips — shared by live answers and replayed transcripts.
+function citesHtml(citations){
+ return (citations||[]).map(c=>{
+  const base=String(c.file||'').split(/[\\/]/).pop()||'file';
+  const enc=encodeURIComponent(String(c.file||'')).replace(/'/g,'%27');
+  return '<button class="chip cite" data-file="'+enc+'" data-page="'+escHtml(String(c.page||''))+'" '
+   +'onclick="citeOpen(this.dataset.file,this.dataset.page)" '
+   +'title="Open '+escHtml(String(c.file||'').replace(/\\/g,'/'))+'">'
+   +'<span class="icon">'+icon('file',14)+'</span>'+escHtml(base)
+   +'<span class="cpage mono">p'+escHtml(String(c.page||''))+'</span></button>';
+ }).join('');
+}
 function refreshChats(){
- const strip=document.querySelector('.chatstrip');
- if(!strip)return Promise.resolve();
+ const listEl=document.getElementById('convlist');
+ if(!listEl)return Promise.resolve();
  return api('/api/chats?folder='+encodeURIComponent(folder())).then(j=>{
   const list=(j&&j.chats)||[];
-  strip.innerHTML=list.map(c=>'<button type="button" class="chatcard'
-   +(c.id===window.__askChat?' active':'')
-   +'" data-chat="'+c.id+'" onclick="openChat(this.dataset.chat)" '
-   +'title="continue this conversation">'
-   +'<span class="cc-t">'+escHtml(c.title)+'</span>'
-   +'<span class="cc-m">'+c.count+' message(s)</span></button>').join('');
+  listEl.innerHTML=list.length
+   ?list.map(convMarkup).join('')
+   :'<p class="cv-empty muted">No conversations yet — your first question '
+    +'starts one, and it stays in this folder.</p>';
  }).catch(()=>{});
 }
 window.newChat=()=>{
  window.__askChat=null;
+ const pane=document.getElementById('chatpane');
+ if(pane)pane.classList.remove('chatting');
  const log=document.getElementById('log');
- if(log)log.innerHTML='<div class="msg ai">Fresh conversation — ask anything about this folder.'
-  +'</div>';
+ if(log)log.innerHTML='';
  refreshChats();
  const q=document.getElementById('q');if(q)q.focus();
 };
@@ -442,21 +461,28 @@ window.openChat=async(id)=>{
  catch(err){toast('Could not open that conversation.',false);return;}
  if(!c||c.error){toast('That conversation is gone.',false);return;}
  window.__askChat=id;
+ const pane=document.getElementById('chatpane');
+ if(pane)pane.classList.add('chatting');
  const log=document.getElementById('log');
  log.innerHTML='';
  (c.messages||[]).forEach(m=>{
   const mine=document.createElement('div');mine.className='msg me';mine.textContent=m.q||'';
   log.appendChild(mine);
+  const cites=citesHtml(m.citations||[]);
   const msg=document.createElement('div');msg.className='msg ai rich fadein';
   msg.innerHTML=(m.blocks&&m.blocks.length?renderBlocks(m.blocks):md(m.answer||''))
-   +'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+escHtml(m.at||'')+'</p>';
+   +'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+escHtml(m.at||'')+'</p>'
+   +(cites?'<div class="cites-row"><span class="muted caption">Sources</span>'
+     +'<div class="row" style="margin:var(--s1) 0 0">'+cites+'</div></div>':'');
   log.appendChild(msg);
  });
  if(!(c.messages||[]).length)log.innerHTML='<div class="msg ai">This conversation is empty.</div>';
- document.querySelectorAll('.chatcard').forEach(el=>
+ document.querySelectorAll('.conv-item').forEach(el=>
   el.classList.toggle('active',el.dataset.chat===id));
  window.__activeChatCard=id;
- log.scrollIntoView({block:'end'});
+ const scroller=document.querySelector('.chatscroll');
+ if(scroller)scroller.scrollTop=scroller.scrollHeight;
+ refreshChats();
 };
 window.citeOpen=async(b64,p)=>{
  const name=(decodeURIComponent(b64)||'').replace(/\\/g,'/');
@@ -552,15 +578,7 @@ function renderAnswer(j){
  const log=document.getElementById('log');
  // Sources at the end: file icon, file name, page badge — one click opens
  // the file itself (falls back to showing it in the file manager).
- const cites=(j.citations||[]).map(c=>{
-  const base=String(c.file||'').split(/[\\/]/).pop()||'file';
-  const enc=encodeURIComponent(String(c.file||'')).replace(/'/g,'%27');
-  return '<button class="chip cite" data-file="'+enc+'" data-page="'+escHtml(String(c.page||''))+'" '
-   +'onclick="citeOpen(this.dataset.file,this.dataset.page)" '
-   +'title="Open '+escHtml(String(c.file||'').replace(/\\\\/g,'/'))+'">'
-   +'<span class="icon">'+icon('file',14)+'</span>'+escHtml(base)
-   +'<span class="cpage mono">p'+escHtml(String(c.page||''))+'</span></button>';
- }).join('');
+ const cites=citesHtml(j.citations||[]);
  const msg=document.createElement('div');
  msg.className='msg ai fadein rich';
  const meta=j.files?(' · '+j.files+' file(s)'+(j.cached?' (already read)':'')+' · '+escHtml(j.model||'')):'';
@@ -618,10 +636,33 @@ window.askFolder=async(question)=>{
  const input=document.getElementById('q');
  const q=typeof question==='string'&&question?question:(input.value||'').trim();
  if(!q)return;
- if(input)input.value='';
+ if(input){input.value='';if(input.style)input.style.height='auto';}
+ const pane=document.getElementById('chatpane');
+ if(pane)pane.classList.add('chatting');
  const log=document.getElementById('log');
  const mine=document.createElement('div');mine.className='msg me';mine.textContent=q;log.appendChild(mine);
+ const scroller=document.querySelector('.chatscroll');
+ if(scroller)scroller.scrollTop=scroller.scrollHeight;
  await askOnce('log','/api/ask?folder='+encodeURIComponent(folder()),q,folder(),true);
+};
+// The composer: Enter asks (Shift+Enter makes a new line), the box
+// grows with the text, and the pane flips from hero to chat on first send.
+window.chartaAskSubmit=(ev)=>{
+ ev.preventDefault();
+ askFolder();
+ return false;
+};
+window.chartaAskInit=()=>{
+ const box=document.getElementById('q');
+ if(!box||!box.classList.contains('qbox'))return;
+ box.addEventListener('keydown',(e)=>{
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();askFolder();}
+ });
+ box.addEventListener('input',()=>{
+  box.style.height='auto';
+  box.style.height=Math.min(box.scrollHeight,220)+'px';
+ });
+ box.focus();
 };
 // --- keep the page in step with the server --------------------------------
 // The backend can be updated while this window is open (a `git pull`, a
@@ -641,7 +682,7 @@ async function checkBuild(){
  }
 }
 setInterval(checkBuild,30000);
-window.addEventListener('load',()=>{checkBuild();});
+window.addEventListener('load',()=>{checkBuild();chartaAskInit();});
 
 // One click that collects everything needed to diagnose a broken answer.
 window.copyDiag=async()=>{

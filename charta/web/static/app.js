@@ -410,12 +410,69 @@ function renderBlocks(blocks){
   return '<p>'+mdBlocks(b.text)+'</p>';
  }).join('\n');
 }
-window.revealCite=(b64,p)=>{
- const name=decodeURIComponent(b64);
- toast('Opening '+name);
- const f=(askOnce.f!==undefined&&askOnce.f)?askOnce.f:folder();
- if(window.revealFile&&f)revealFile(f,name);
+// --- the conversation: follow-ups continue the same saved chat --------------
+// Charta keeps every conversation in the folder it is about
+// (.charta/chats/<id>.json): reopenable, and every follow-up sends the
+// earlier turns back to the model, so "and what about June?" works.
+window.__askChat=null;
+function refreshChats(){
+ const strip=document.querySelector('.chatstrip');
+ if(!strip)return Promise.resolve();
+ return api('/api/chats?folder='+encodeURIComponent(folder())).then(j=>{
+  const list=(j&&j.chats)||[];
+  strip.innerHTML=list.map(c=>'<button type="button" class="chatcard'
+   +(c.id===window.__askChat?' active':'')
+   +'" data-chat="'+c.id+'" onclick="openChat(this.dataset.chat)" '
+   +'title="continue this conversation">'
+   +'<span class="cc-t">'+escHtml(c.title)+'</span>'
+   +'<span class="cc-m">'+c.count+' message(s)</span></button>').join('');
+ }).catch(()=>{});
+}
+window.newChat=()=>{
+ window.__askChat=null;
+ const log=document.getElementById('log');
+ if(log)log.innerHTML='<div class="msg ai">Fresh conversation — ask anything about this folder.'
+  +'</div>';
+ refreshChats();
+ const q=document.getElementById('q');if(q)q.focus();
 };
+window.openChat=async(id)=>{
+ let c;
+ try{c=await api('/api/chat?folder='+encodeURIComponent(folder())+'&id='+encodeURIComponent(id));}
+ catch(err){toast('Could not open that conversation.',false);return;}
+ if(!c||c.error){toast('That conversation is gone.',false);return;}
+ window.__askChat=id;
+ const log=document.getElementById('log');
+ log.innerHTML='';
+ (c.messages||[]).forEach(m=>{
+  const mine=document.createElement('div');mine.className='msg me';mine.textContent=m.q||'';
+  log.appendChild(mine);
+  const msg=document.createElement('div');msg.className='msg ai rich fadein';
+  msg.innerHTML=(m.blocks&&m.blocks.length?renderBlocks(m.blocks):md(m.answer||''))
+   +'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+escHtml(m.at||'')+'</p>';
+  log.appendChild(msg);
+ });
+ if(!(c.messages||[]).length)log.innerHTML='<div class="msg ai">This conversation is empty.</div>';
+ document.querySelectorAll('.chatcard').forEach(el=>
+  el.classList.toggle('active',el.dataset.chat===id));
+ window.__activeChatCard=id;
+ log.scrollIntoView({block:'end'});
+};
+window.citeOpen=async(b64,p)=>{
+ const name=(decodeURIComponent(b64)||'').replace(/\\/g,'/');
+ const f=(askOnce.f!==undefined&&askOnce.f)?askOnce.f:folder();
+ if(!f){toast('Which folder is this file from?',false);return;}
+ try{
+  await post('/api/file/open?folder='+encodeURIComponent(f),{path:name});
+  toast('Opened '+name.split('/').pop());
+ }catch(err){
+  try{
+   await post('/api/file/reveal?folder='+encodeURIComponent(f),{path:name});
+   toast('Showing '+name.split('/').pop()+' in the file manager');
+  }catch(err2){toast('Could not open the file here.',false);}
+ }
+};
+window.revealCite=window.citeOpen;
 // The model's work, shown as it happens: a collapsible block inside the chat
 // where every tool call appears the moment the model makes it (streamed),
 // then collapses into a one-line summary above the answer.
@@ -493,9 +550,17 @@ async function watchJob(job,work){
 }
 function renderAnswer(j){
  const log=document.getElementById('log');
- const cites=(j.citations||[]).map(c=>'<button class="chip cite mono" '
-  +'onclick="revealCite(\''+encodeURIComponent(c.file)+'\',\''+c.page+'\')">'
-  +escHtml(c.file)+' p'+c.page+'</button>').join(' ');
+ // Sources at the end: file icon, file name, page badge — one click opens
+ // the file itself (falls back to showing it in the file manager).
+ const cites=(j.citations||[]).map(c=>{
+  const base=String(c.file||'').split(/[\\/]/).pop()||'file';
+  const enc=encodeURIComponent(String(c.file||'')).replace(/'/g,'%27');
+  return '<button class="chip cite" data-file="'+enc+'" data-page="'+escHtml(String(c.page||''))+'" '
+   +'onclick="citeOpen(this.dataset.file,this.dataset.page)" '
+   +'title="Open '+escHtml(String(c.file||'').replace(/\\\\/g,'/'))+'">'
+   +'<span class="icon">'+icon('file',14)+'</span>'+escHtml(base)
+   +'<span class="cpage mono">p'+escHtml(String(c.page||''))+'</span></button>';
+ }).join('');
  const msg=document.createElement('div');
  msg.className='msg ai fadein rich';
  const meta=j.files?(' · '+j.files+' file(s)'+(j.cached?' (already read)':'')+' · '+escHtml(j.model||'')):'';
@@ -503,7 +568,8 @@ function renderAnswer(j){
  msg.innerHTML=((j.blocks&&j.blocks.length)?renderBlocks(j.blocks)
   :(body?md(body):'<p>No answer came back — expand the work above to see where it stopped.</p>'))
   +(meta?'<p class="muted" style="margin:var(--s2) 0 0;font-size:var(--fs-label)">'+meta+'</p>':'')
-  +(cites?'<div class="row" style="margin-top:var(--s2)">'+cites+'</div>':'');
+  +(cites?'<div class="cites-row"><span class="muted caption">Sources</span>'
+    +'<div class="row" style="margin:var(--s1) 0 0">'+cites+'</div></div>':'');
  log.appendChild(msg);msg.scrollIntoView({block:'end',behavior:'smooth'});
 }
 function showFailure(done){
@@ -517,11 +583,11 @@ function showFailure(done){
 }
 // One shared question flow for the Ask page and the per-folder ask boxes:
 // post the job, stream the work into an inline block, then render the answer.
-async function askOnce(boxEl,endpoint,q,folderOverride){
+async function askOnce(boxEl,endpoint,q,folderOverride,isChat){
  askOnce.f=folderOverride;
  const work=makeWork();
  let j;
- try{j=await post(endpoint,{q});}
+ try{j=await post(endpoint,{q,chat:isChat?(window.__askChat||'new'):''});}
  catch(err){
   const log=document.getElementById(boxEl?boxEl:'log');
   const bad=document.createElement('div');bad.className='msg ai';
@@ -539,6 +605,11 @@ async function askOnce(boxEl,endpoint,q,folderOverride){
  if(!done)done=await watchJob(j.job,work);
  window.__lastAsk=done;
  work.finish(done?done.state:'failed');
+ if(isChat){
+  // The job carries the conversation it belongs to; the strip follows.
+  window.__askChat=(done&&done.chat)||(j.chat||'');
+  refreshChats();
+ }
  if(!done)return;
  if(done.state==='failed'){showFailure(done);return;}
  renderAnswer(done);
@@ -550,7 +621,7 @@ window.askFolder=async(question)=>{
  if(input)input.value='';
  const log=document.getElementById('log');
  const mine=document.createElement('div');mine.className='msg me';mine.textContent=q;log.appendChild(mine);
- await askOnce('log','/api/ask?folder='+encodeURIComponent(folder()),q,folder());
+ await askOnce('log','/api/ask?folder='+encodeURIComponent(folder()),q,folder(),true);
 };
 // --- keep the page in step with the server --------------------------------
 // The backend can be updated while this window is open (a `git pull`, a

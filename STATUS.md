@@ -37,9 +37,36 @@ pass and a recorded before/after demo.
 - [x] `charta demo`: deterministic messy folder + preset charter + propose +
       approve + purpose output in one command; offline by default, `--ai` to
       use the configured model, `--dry-run`, `--reset`, `--watch`.
-- [x] 149 pytest tests, Electron unit tests, 27 measured UI screens.
+- [x] 246 pytest tests, Electron unit tests, 27 measured UI screens.
 
 ## Done Log
+
+- 2026-10-24: **Ask conversations persist, and follow-ups remember what was
+  asked before.** Each Ask-page conversation is a user-owned file,
+  `.charta/chats/<id>.json` (id, created, title = first question's first
+  72 characters, one message per exchange with q/answer/blocks/model/
+  citations/at) — `charta/core/chats.py`. `/api/ask` now speaks a chat
+  protocol: `chat:"new"` starts a conversation, `chat:"<id>"` continues
+  one (unknown ids fall back to fresh), `chat:""` stays ephemeral so the
+  dashboard ask boxes create nothing. `_run_ask` sends the earlier turns
+  to the model via `ask_with_tools(..., history=...)` (user/assistant
+  pairs, last 6 turns, each capped at 1600 characters — history is a
+  brief, not a dump) and records every answered turn (agent path, fallback
+  path, and the empty-index path). Two read APIs back the UI: `/api/chats`
+  (newest first) and `/api/chat` (full transcript, 404 when gone). The Ask
+  page shows an "Earlier conversations" strip of repeatable cards; clicking
+  one replays the whole transcript and continues it; askOnce now carries
+  the conversation id and the work block says "Continuing the conversation
+  (N earlier turn(s))". Sources became proper chips (file icon, basename,
+  page badge); clicking opens the file in its default app and falls back to
+  revealing it — paths are normalised to `/` and strawberries like `'` are
+  encoded as `%27` because encodeURIComponent leaves quoting marks alone;
+  chips no longer build inline JS strings with nested quotes — onclick
+  handlers read `this.dataset`, which cannot break parsing. The "Tools the
+  model can call" section left the Ask page. Files: `charta/core/chats.py`,
+  `charta/core/agent.py`, `charta/web/app.py`, `app.js`, `app.css`,
+  `tests/test_chats.py`, `tests/test_web_ui.py`. Verified: `pytest -q`
+  246 passed (10 new), `node --check` on app.js. Commit: 8b124b0.
 
 - 2026-10-23: **approved files no longer return to Review after a restart,
   and approving an already-placed file cannot create "name (2)" anymore.**
@@ -496,8 +523,8 @@ pass and a recorded before/after demo.
 
 ## Next Up
 
-1. (user) Try the new Ask on Windows: streamed work inline, markdown answer,
-   gaps and rename proposals appearing after a question.
+1. (user) Try the new Ask on Windows: the chat strip, continuing a
+   conversation, follow-up memory, and opening a source chip.
 2. Windows visual pass: Explorer menu, tray, Mica/title bar, close-to-tray.
 3. Record a 60–90s before/after demo (`charta demo` → sorted folder + output).
 
@@ -515,6 +542,19 @@ pass and a recorded before/after demo.
 
 ## Decisions
 
+- 2026-10-24: conversations are files, not a hidden database —
+  `.charta/chats/<id>.json` inside the folder the chat is about. Why: same
+  principle as the charter and journal — memory the user owns, can open,
+  move, or edit; survives with the folder; no extra runtime.
+- 2026-10-24: follow-up memory sends the last 6 turns capped at 1600
+  characters each, as plain user/assistant messages. Why: the model must
+  see what it said, but a full chat replay would drown the index catalogue
+  in tokens; the cap keeps prompts small and predictable on 4B-class
+  models.
+- 2026-10-24: the ask API distinguishes `chat:"new"`, an existing id, and
+  an empty chat (ephemeral). Why: the dashboard's per-folder ask boxes are
+  one-shot questions — saving every one would litter the strip with
+  throwaway conversations.
 - 2026-10-23: answer rendering moved from "parse whatever markdown the
   model wrote" to a model-driven blocks protocol (`FINAL: {"blocks":[...]}`,
   Pydantic-validated, five block types). Why: the model kept emitting
@@ -551,6 +591,25 @@ pass and a recorded before/after demo.
   card/pill soup. Design details live in `DESIGN.md`.
 
 ## Failures & Lessons
+
+- 2026-10-24: building `onclick="openChat('<id>')"` as a JS string meant
+  nested quoting — the `\\'` escapes landed literally in app.js and
+  `node --check` failed (missing `)` after argument list), and a later
+  citation-chip rewrite failed the same way for the same reason. Fix: no
+  inline strings — chips carry `data-*` attributes and the handler reads
+  `this.dataset`; values are `encodeURIComponent`-escaped with `'` forced
+  to `%27` (encodeURIComponent deliberately leaves `'` unencoded, which
+  would still terminate the attribute). Lesson: any time generated HTML
+  needs to call a function with a value, ship the value in a data
+  attribute; string-splicing arguments into attributes is a parsing bug
+  waiting to happen.
+- 2026-10-24: several Python edits used `str.replace` with a code anchor
+  and reported "ok" even when the anchor had already changed — the chat-id
+  parameter, the history call, and the chats import all silently never
+  landed, and three test waves (state "failed", `chat_id is not defined`,
+  `chats is not defined`) were the only symptom. Lesson: assert the anchor
+  was found before writing (`if old not in s: raise`), and let the test
+  suite, not the print, confirm an edit took effect.
 
 - 2026-10-23: the ask rewrite left a duplicate old `window.askFolder` behind;
   the later definition won, calling the new `watchJob(job, work)` with a

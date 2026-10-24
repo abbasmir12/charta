@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import icons
 from ..core import applog
+from ..core import chats
 from ..core import fsbrowse
 from ..core import history
 from ..core import index_db
@@ -1069,22 +1070,30 @@ def ask_page(folder: str = "", q: str = "") -> str:
         f'<button type="button" class="chip" onclick="askFolder({q!r})">{q}</button>'
         for q in (["What is in this folder?", "Summarise the newest files"]
                   + ([f"What about {ch.expected[0]}?"] if ch and ch.expected else [])))
-    inner = f"""{page_head("Ask", f"About {_basename(folder)} — answers cite file and page.",
+    # the folder's saved conversations, ready to reopen and continue
+    saved = chats.list_chats(folder, 12)
+    chat_cards = "".join(
+        f'<button type="button" class="chatcard" data-chat="{escape_attr(c["id"])}" '
+        f'onclick="openChat({c["id"]!r})" title="continue this conversation">'
+        f'<span class="cc-t">{escape_attr(c["title"])}</span>'
+        f'<span class="cc-m">{c["count"]} message(s)</span></button>'
+        for c in saved)
+    inner = f"""{page_head("Ask", f"About {_basename(folder)} — answers cite file and page, and every question remembers the last.",
                           f'<span class="chip">{cfg.llm_provider} · {cfg.generation_model}</span>')}
-<div id="steps" class="steps-wrap" aria-live="polite"></div>
+{f'<section class="section"><div class="section-head"><h2 class="section-title">Earlier conversations</h2>'
+ f'<div class="section-actions"><button type="button" class="chip" onclick="newChat()">'
+ f'{icon("sparkles", 14)} New conversation</button></div></div>'
+ f'<div class="chatstrip">{chat_cards}</div></section>' if chat_cards else ''}
 <div class="chatlog" id="log" role="log" aria-live="polite">
-<div class="msg ai">Ask anything about this folder — I show my work as I go, quote the file and page I used, and I won't invent an answer.</div></div><div class="row"><input id="q" type="text" aria-label="Your question" placeholder="e.g. What electricity bills do we have for March?" value="{escape_attr(q)}">
+<div class="msg ai">Ask anything about this folder — I show my work as I go, remember
+the conversation, quote the file and page I used, and I won't invent an answer.
+<button type="button" class="chip" onclick="newChat()" style="margin-left:var(--s2)">New conversation</button></div></div><div class="row"><input id="q" type="text" aria-label="Your question" placeholder="e.g. What electricity bills do we have for March?" value="{escape_attr(q)}">
 <button type="button" class="btn btn-icon" onclick="toggleMic('q')" aria-label="Ask by voice">{icon("mic", 18)}</button>
 <button type="button" class="btn btn-primary" onclick="askFolder()"><span class="icon">{icon("arrow-right", 16)}</span> Ask</button></div>
 <div class="row" style="margin-top:var(--s3)">{starters}</div>
-<section class="section"><div class="section-head">
-<h2 class="section-title">Tools the model can call</h2>
-<span class="section-note">The model works from the index, not by reading everything</span></div>
-<div class="row">{''.join(f'<span class="chip mono">{t["name"]}</span>' for t in TOOL_SPECS)}</div>
-<p class="muted">{TOOL_HINT}</p>
-<p class="askbuild muted" style="margin-top:var(--s2)"><button type="button" class="chip" onclick="copyDiag()">Copy diagnostics</button>
+<p class="askbuild muted" style="margin-top:var(--s3)"><button type="button" class="chip" onclick="copyDiag()">Copy diagnostics</button>
 <span class="muted"> — if an answer never arrives, paste what that gives you.</span>
-<span class="muted mono" style="margin-left:var(--s3)">code {_code_revision()} · backend started {_STARTED}</span></p></section>"""
+<span class="muted mono" style="margin-left:var(--s3)">code {_code_revision()} · backend started {_STARTED}</span></p>"""
     if q.strip():
         inner += (f'<script>window.addEventListener("load",()=>askFolder('
                   f'{q.strip()!r}));</script>')
@@ -1443,6 +1452,20 @@ def api_outputs(folder: str) -> JSONResponse:
     return JSONResponse(result)
 
 
+@app.get("/api/chats")
+def api_chats(folder: str, limit: int = 20) -> JSONResponse:
+    """The folder's saved conversations, newest first."""
+    return JSONResponse({"chats": chats.list_chats(folder, limit)})
+
+
+@app.get("/api/chat")
+def api_chat(folder: str, id: str) -> JSONResponse:
+    chat = chats.load(folder, id)
+    if chat is None:
+        return JSONResponse({"error": "no-chat"}, status_code=404)
+    return JSONResponse(chat)
+
+
 @app.post("/api/ask")
 async def api_ask(req: Request, folder: str = "") -> JSONResponse:
     """Start a question. The work is a job the UI can watch step by step."""
@@ -1456,14 +1479,24 @@ async def api_ask(req: Request, folder: str = "") -> JSONResponse:
     if not question:
         return JSONResponse({"error": "no-question", "message": "Type a question.",
                              "answer": "Type a question.", "citations": []}, status_code=400)
+    raw_chat = str(body.get("chat") or "").strip()
+    if raw_chat == "new":
+        chat_id = chats.new_id()      # the Ask page starts a conversation
+    elif raw_chat and chats.load(folder, raw_chat) is not None:
+        chat_id = raw_chat            # a follow-up in an existing chat
+    else:
+        chat_id = ""                  # e.g. the dashboard ask box: ephemeral
     job = Job(id=str(uuid.uuid4()), kind="ask")
     job.step("work", f"Reading the index of {_basename(folder)}…")
+    if chat_id:
+        job.extra["chat"] = chat_id
     with _jobs_lock:
         _jobs[job.id] = job
         if len(_jobs) > 40:
             for old in list(_jobs)[:-40]:
                 _jobs.pop(old, None)
-    thread = threading.Thread(target=_run_ask, args=(job, folder, question), daemon=True)
+    thread = threading.Thread(target=_run_ask, args=(job, folder, question, chat_id),
+                              daemon=True)
     thread.start()
     return JSONResponse(job.as_dict())
 
@@ -1515,7 +1548,8 @@ def api_ask_status(job: str = "") -> JSONResponse:
     return JSONResponse(current.as_dict())
 
 
-def _run_ask(job: Job, folder: str, question: str) -> None:
+def _run_ask(job: Job, folder: str, question: str,
+              chat_id: str = "") -> None:
     """Do the work, recording every step so the UI can show it."""
     cfg = _cfg()
     client = LLMClient(cfg)
@@ -1534,13 +1568,18 @@ def _run_ask(job: Job, folder: str, question: str) -> None:
                           "I will have something to read.")
             job.extra.update({"files": 0, "provider": cfg.llm_provider,
                               "model": cfg.generation_model})
+            if chat_id:
+                chats.append_message(folder, chat_id, question, job.answer)
             return
         # The agent: the model gets the index catalogue and the tools, and
         # calls them itself. If it does not use a tool, the plain retrieval
         # path answers instead — the user always gets an answer.
         steps: list[dict] = []
         job.step("work", f"Looking for “{question}”…")
-        agent = ask_with_tools(question, folder, client, steps=steps)
+        history = chats.history_for(folder, chat_id)
+        if history:
+            job.step("work", f"Continuing the conversation ({len(history) // 2} earlier turn(s)).")
+        agent = ask_with_tools(question, folder, client, steps=steps, history=history)
         for s in steps:
             job.step(s["kind"], s["text"])
         # The answer arrives in the strict blocks protocol; organisation
@@ -1566,6 +1605,10 @@ def _run_ask(job: Job, folder: str, question: str) -> None:
         if agent.answer and (agent.used_tools or cited):
             pass  # job.answer already holds the cleaned blocks text
             job.citations = [{"file": c.file, "page": c.page} for c in agent.citations]
+            if chat_id:
+                chats.append_message(folder, chat_id, question, job.answer,
+                                     blocks=job.blocks, model=cfg.generation_model,
+                                     citations=job.citations)
             job.extra.update({"tools": [c.name for c in agent.calls],
                               "files": len(idx), "provider": cfg.llm_provider,
                               "model": cfg.generation_model, "cached": cached})
@@ -1582,6 +1625,9 @@ def _run_ask(job: Job, folder: str, question: str) -> None:
             "Try a vendor, a year or an amount from the file name.")
         job.answer, job.blocks, _, _ = structured_answer(fallback)
         job.citations = [{"file": c.file, "page": c.page} for c in ans.citations]
+        if chat_id:
+            chats.append_message(folder, chat_id, question, job.answer,
+                                 blocks=job.blocks, citations=job.citations)
         job.state = "done"
         job.extra.update({"files": len(idx), "provider": cfg.llm_provider,
                           "model": cfg.generation_model, "cached": cached})

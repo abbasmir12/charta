@@ -368,3 +368,26 @@ table.grid tbody tr:hover td{background:var(--raised)}
   border-radius:var(--r-card);padding:var(--s2) var(--s3)}
 .fact .k{font-size:var(--fs-label);color:var(--muted)}
 .fact .v{font-size:var(--fs-body);color:var(--text);font-weight:600}
+
+/* conversations: reopenable chats, one chip each, newest first */
+.chatstrip{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.chatcard{display:flex;flex-direction:column;gap:2px;align-items:flex-start;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-card);padding:var(--s2) var(--s3);cursor:pointer;
+  max-width:280px;text-align:left;color:var(--text);font:inherit;
+  transition:border-color var(--t-base) var(--ease),transform var(--t-base) var(--ease)}
+.chatcard:hover{border-color:var(--accent1);transform:translateY(-1px)}
+.chatcard.active{border-color:var(--accent1);
+  background:color-mix(in srgb,var(--accent1) 10%,var(--surface))}
+.cc-t{font-size:var(--fs-sm);font-weight:600;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:250px}
+.cc-m{font-size:var(--fs-caption);color:var(--faint)}
+.chatcard.active .cc-m{color:var(--accent1)}
+
+/* sources: file icon, name, page badge — clickable, cool */
+.cites-row{margin-top:var(--s2)}
+.cite{gap:var(--s1);padding:var(--s1) var(--s3)}
+.cite .icon{color:var(--accent1);flex:0 0 auto}
+.cite:hover{border-color:var(--accent1);background:color-mix(in srgb,var(--accent1) 8%,transparent)}
+.cpage{font-size:var(--fs-caption);color:var(--muted);background:var(--solid);
+  border-radius:var(--r-xs);padding:0 var(--s1)}

@@ -438,7 +438,7 @@ def test_a_model_gap_lands_in_the_ai_gaps(client, tmp_path, monkeypatch):
     from charta.core.agent import AgentResult
     import charta.web.app as web_app
 
-    def fake(question, folder, llm_client, steps=None, rounds=5):
+    def fake(question, folder, llm_client, steps=None, rounds=5, **_):
         if steps is not None:
             steps.append({"kind": "done", "text": "Answer ready."})
         return AgentResult(
@@ -493,7 +493,7 @@ const fs=require('fs');
 const src=fs.readFileSync(process.argv[1],'utf8');
 const grab=(a,b)=>src.slice(src.indexOf(a),src.indexOf(b));
 const escHtml=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-eval(grab('function mdInline(','window.revealCite'));
+eval(grab('function mdInline(','window.__askChat'));
 const out=md(['## Summary','###NoSpace','####Deep','**Bold heading**'].join('\\n'));
 if(!/<h3>Summary<\\/h3>/.test(out))throw new Error('## broken');
 if(!/<h4>NoSpace<\\/h4>/.test(out))throw new Error('### without space still literal');
@@ -520,7 +520,7 @@ def test_the_blocks_protocol_reaches_the_browser(client, tmp_path, monkeypatch):
         {"type": "p", "text": "details [f.txt p1]"},
     ]})
 
-    def fake(question, folder, llm_client, steps=None, rounds=5):
+    def fake(question, folder, llm_client, steps=None, rounds=5, **_):
         if steps is not None:
             steps.append({"kind": "done", "text": "Answer ready."})
         raw = f"FINAL: {payload}"
@@ -558,7 +558,7 @@ const src=fs.readFileSync(process.argv[1],'utf8');
 const grab=(a,b)=>src.slice(src.indexOf(a),src.indexOf(b));
 const escHtml=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const toast=()=>{};const folder=()=>'';const revealFile=()=>{};
-eval(grab('function mdInline(','window.revealCite'));
+eval(grab('function mdInline(','window.__askChat'));
 const out=renderBlocks([
  {type:'heading',level:1,text:'### Rent overview'},
  {type:'facts',entries:[{label:'Total',value:'900 EUR'}]},
@@ -600,3 +600,89 @@ def test_approving_removes_the_right_card_from_review(client, tmp_path):
     assert ".prop-card.approved" in css
     page = client.get("/review", params={"folder": "x"}).text
     assert "<!doctype html>" in page  # the page itself still renders fine
+
+
+def test_an_ask_page_question_starts_a_saved_conversation(client, tmp_path):
+    """The Ask page saves every exchange under .charta/chats and lists it."""
+    (tmp_path / "note.txt").write_text("Sponsorship 2026 is 5000 EUR.", encoding="utf-8")
+    body = client.post("/api/ask", params={"folder": str(tmp_path)},
+                       json={"q": "what is the sponsorship?", "chat": "new"}).json()
+    done = _wait_job(client, body["job"])
+    assert done["state"] == "done"
+
+    listed = client.get("/api/chats", params={"folder": str(tmp_path)}).json()["chats"]
+    assert len(listed) == 1 and listed[0]["title"].startswith("what is the sponsorship?")
+
+    chat = client.get("/api/chat",
+                      params={"folder": str(tmp_path), "id": listed[0]["id"]}).json()
+    assert chat["messages"][0]["q"] == "what is the sponsorship?"
+    assert "5000 EUR" in chat["messages"][0]["answer"]
+
+
+def test_a_follow_up_sends_the_earlier_turns_to_the_model(client, monkeypatch, tmp_path):
+    """Second question in the same chat arrives with the earlier conversation."""
+    from types import SimpleNamespace
+
+    import charta.web.app as web_app
+
+    seen: list[list] = []
+
+    def fake(question, folder, llm_client, steps=None, rounds=5, history=None):
+        seen.append(list(history or []))
+        return SimpleNamespace(answer="a recorded answer",
+                               blocks=[], raw="a recorded answer",
+                               citations=[], calls=[], used_tools=True, files=[])
+
+    monkeypatch.setattr(web_app, "ask_with_tools", fake)
+    (tmp_path / "note.txt").write_text("Sponsorship 2026 is 5000 EUR.", encoding="utf-8")
+
+    body = client.post("/api/ask", params={"folder": str(tmp_path)},
+                       json={"q": "first question", "chat": "new"}).json()
+    chat_id = body["chat"]
+    assert chat_id, "the ask page conversation should have an id"
+    _wait_job(client, body["job"])
+
+    body2 = client.post("/api/ask", params={"folder": str(tmp_path)},
+                        json={"q": "and what about June?", "chat": chat_id}).json()
+    assert body2["chat"] == chat_id, "a follow-up continues the same conversation"
+    _wait_job(client, body2["job"])
+
+    assert seen[0] == [], "a fresh conversation has no history"
+    history = seen[1]
+    assert any(m.get("role") == "user" and "first question" in m.get("content", "")
+               for m in history)
+    assert any(m.get("role") == "assistant" and "a recorded answer" in m.get("content", "")
+               for m in history)
+
+
+def test_the_dashboard_ask_box_stays_ephemeral(client, tmp_path):
+    """Asking from a folder card does not create conversation files."""
+    (tmp_path / "note.txt").write_text("Sponsorship 2026 is 5000 EUR.", encoding="utf-8")
+    body = client.post("/api/ask", params={"folder": str(tmp_path)},
+                       json={"q": "what is the sponsorship?"}).json()
+    done = _wait_job(client, body["job"])
+    assert done["state"] == "done"
+    assert not (tmp_path / ".charta" / "chats").exists()
+
+
+def test_the_ask_page_offers_saved_conversations_and_hides_the_tools(client, tmp_path):
+    """The chat strip lists earlier conversations; the tools list is gone."""
+    import charta.core.chats as chats
+
+    cid = chats.new_id()
+    chats.append_message(tmp_path, cid, "What is in this folder?", "A few notes.")
+
+    html = client.get("/ask", params={"folder": str(tmp_path)}).text
+    assert "Earlier conversations" in html
+    assert "chatcard" in html and cid in html
+    assert "newChat" in html
+    assert "Tools the model can call" not in html
+    assert "TOOL_HINT" not in html
+
+
+def test_an_unknown_chat_id_falls_back_to_a_fresh_conversation(client, tmp_path):
+    (tmp_path / "note.txt").write_text("note", encoding="utf-8")
+    body = client.post("/api/ask", params={"folder": str(tmp_path)},
+                       json={"q": "hello?", "chat": "does-not-exist-0001"}).json()
+    assert body.get("chat") in ("", None), "an unknown id must not be trusted blindly"
+    _wait_job(client, body["job"])

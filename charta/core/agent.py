@@ -234,9 +234,13 @@ def _read_from_index(folder: str | pathlib.Path, path: str) -> str | None:
 
 
 def ask_with_tools(question: str, folder: str | pathlib.Path, client: LLMClient,
-                   steps: list[dict] | None = None, rounds: int = MAX_ROUNDS) -> AgentResult:
+                   steps: list[dict] | None = None, rounds: int = MAX_ROUNDS,
+                   history: list[dict] | None = None) -> AgentResult:
     """Let the model use the folder's tools, then answer.
 
+    ``history`` carries the previous turns of the conversation (model
+    messages), so follow-up questions — "and what about June?" — land on a
+    model that remembers the exchange before. A fresh question has none.
     Falls back to a plain answer when the model does not call any tool.
     """
     def note(kind: str, text: str) -> None:
@@ -247,7 +251,8 @@ def ask_with_tools(question: str, folder: str | pathlib.Path, client: LLMClient,
                           f"{t['description']}" for t in TOOL_SPECS)
     system = SYSTEM.format(tools=tool_text, catalogue=catalogue(folder))
     note("work", "Showing the model the index catalogue.")
-    messages: list[dict] = [{"role": "user", "content": question}]
+    messages: list[dict] = list(history or [])
+    messages.append({"role": "user", "content": question})
     calls: list[ToolCall] = []
     used_files: list[str] = []
     answer = ""

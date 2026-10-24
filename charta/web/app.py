@@ -261,7 +261,7 @@ def shell(page: str, folder: str, inner: str, mode: str = "suggest", label: str 
             f'data-chat="{escape_attr(c["id"])}" onclick="openChat(this.dataset.chat);return false;" '
             f'title="open this conversation">'
             f'<span class="cv-t">{escape_attr(c["title"])}</span>'
-            f'<span class="cv-m">{c["count"]} message(s)</span></a>'
+            f'<span class="cv-m">{escape_attr(chats.meta_line(c["count"], c.get("updated") or ""))}</span></a>'
             for c in saved)
         empty = '<p class="cv-empty muted">No conversations yet — ask something below.</p>'
         conv_block = (
@@ -270,8 +270,9 @@ def shell(page: str, folder: str, inner: str, mode: str = "suggest", label: str 
             f'<span class="icon">{icon("chevron-right", 14)}</span>'
             f'<span class="rail-sub-label">Conversations</span>'
             f'<span class="spacer"></span>'
-            f'<button type="button" class="chip" onclick="newChat(event)" '
-            f'title="start a new conversation"><span class="icon">{icon("sparkles", 14)}</span> New</button></summary>'
+            f'<button type="button" class="plusbtn" onclick="newChat(event)" '
+            f'title="New conversation" aria-label="New conversation">'
+            f'<span class="icon">{icon("plus", 15)}</span></button></summary>'
             f'<div class="conv-list" id="convlist" role="list">{conv_items or empty}</div></details>')
     settings_active = "active" if page == "settings" else ""
     folder_crumb = (
@@ -1585,6 +1586,23 @@ def api_ask_status(job: str = "") -> JSONResponse:
     return JSONResponse(current.as_dict())
 
 
+def _ensure_chat_title(folder: str, chat_id: str, question: str,
+                       answer: str, client: object) -> None:
+    """The AI names a conversation when its first exchange is recorded.
+
+    The small extra call happens once, before the answer event reaches the
+    UI, so the rail already shows the picked title. If the provider is
+    unreachable the question's first line becomes the title instead.
+    """
+    if not chat_id:
+        return
+    chat = chats.load(folder, chat_id)
+    if chat is None or chat.get("title") or len(chat.get("messages") or []) != 1:
+        return
+    title = chats.ai_title(question, answer, client) or chats.fallback_title(question)
+    chats.set_title(folder, chat_id, title)
+
+
 def _run_ask(job: Job, folder: str, question: str,
               chat_id: str = "") -> None:
     """Do the work, recording every step so the UI can show it."""
@@ -1607,6 +1625,7 @@ def _run_ask(job: Job, folder: str, question: str,
                               "model": cfg.generation_model})
             if chat_id:
                 chats.append_message(folder, chat_id, question, job.answer)
+                _ensure_chat_title(folder, chat_id, question, job.answer, client)
             return
         # The agent: the model gets the index catalogue and the tools, and
         # calls them itself. If it does not use a tool, the plain retrieval
@@ -1646,6 +1665,7 @@ def _run_ask(job: Job, folder: str, question: str,
                 chats.append_message(folder, chat_id, question, job.answer,
                                      blocks=job.blocks, model=cfg.generation_model,
                                      citations=job.citations)
+                _ensure_chat_title(folder, chat_id, question, job.answer, client)
             job.extra.update({"tools": [c.name for c in agent.calls],
                               "files": len(idx), "provider": cfg.llm_provider,
                               "model": cfg.generation_model, "cached": cached})
@@ -1665,6 +1685,7 @@ def _run_ask(job: Job, folder: str, question: str,
         if chat_id:
             chats.append_message(folder, chat_id, question, job.answer,
                                  blocks=job.blocks, citations=job.citations)
+            _ensure_chat_title(folder, chat_id, question, job.answer, client)
         job.state = "done"
         job.extra.update({"files": len(idx), "provider": cfg.llm_provider,
                           "model": cfg.generation_model, "cached": cached})

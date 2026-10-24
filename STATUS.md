@@ -41,6 +41,20 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-24: **conversation titles now come from the AI on first exchange;
+  rail meta rewritten; "+ New" button replaces the text chip.** At the end of
+  the first exchange (answer recorded), `_run_ask` asks the model for a
+  2–6 word title via strict-JSON `chat()` (client retries internally),
+  falling back to the question's first line when the provider is down — the
+  naming runs before the job's `done` event so the rail is fresh. Item meta
+  became "N messages, <age>" via `chats.meta_line` / `chats.rel_time`
+  (server) and a mirrored JS `relTime`. The text "New" chip became a quiet
+  circular `.plusbtn` (+) button. Tests: chats title/fallback/meta suites
+  updated. Files: `charta/core/chats.py`, `charta/web/app.py`,
+  `charta/web/static/app.js`, `tests/test_chats.py`, `DESIGN.md`.
+  Verified: `pytest -q` 248 passed; `tools/ui_check.py` 36 screens clean.
+  Commit: d18bc6c.
+
 - 2026-10-24: **conversations moved into the main rail as a collapsible
   subtree under Ask** and the in-page conversations column removed. The
   Work rail now shows "Conversations — [chips New]" under Ask on every

@@ -122,10 +122,12 @@
    button) with starter cards beneath; once conversation starts the greeting
    disappears, the log scrolls and the composer pins to the bottom. The
    folder's conversations live in the main rail's Ask entry as a collapsible
-   subtree (title + message count, newest first, "New" action) that follows
-   the folder on every screen; clicking one replays and continues it.
-   Rich answers (typed blocks), citation chips (icon + name + page badge,
-   one click opens the file), a calm "couldn't find" state.
+   subtree (chevron, title, "N messages, <age>", newest first, + button to
+   start new) that follows the folder on every screen; clicking an item
+   replays and continues it. The AI names a conversation at the end of its
+   first exchange (fallback: the question's first line). Rich answers
+   (typed blocks), citation chips (icon + name + page badge, one click opens
+   the file), a calm "couldn't find" state.
 7. Activity: ruled log (`what / file / why / when`), Undo per row.
 7c. Search: the folder's metadata index — a search field, then one card per
    match with the file path, its one-line description, its tags, and the

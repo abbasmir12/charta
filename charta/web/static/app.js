@@ -422,7 +422,21 @@ function convMarkup(c){
   +'/ask?folder='+encodeURIComponent(folder())+'&chat='+encodeURIComponent(c.id)
   +'" data-chat="'+c.id+'" onclick="openChat(this.dataset.chat);return false;">'
   +'<span class="cv-t">'+escHtml(c.title)+'</span>'
-  +'<span class="cv-m">'+c.count+' message(s)</span></a>';
+  +'<span class="cv-m">'+(c.count===1?'1 message':(c.count+' messages'))+', '+(c.updated?relTime(c.updated):'')+'</span></a>';
+}
+// Human age for the conversation meta ('2 messages, 3 h ago').
+function relTime(iso){
+ if(!iso)return '';
+ const d=new Date(iso);const t=Date.now()-d.getTime();
+ if(isNaN(t)||t<0)return '';
+ const mins=Math.floor(t/60000);
+ if(t<60000)return 'just now';
+ if(mins<60)return mins+' min ago';
+ const hrs=Math.floor(mins/60);
+ if(mins<60*24)return hrs+' h ago';
+ if(t<172800000)return 'yesterday';
+ if(t<2592000000)return Math.floor(t/86400000)+' d ago';
+ return d.toLocaleDateString(undefined,{day:'numeric',month:'short'});
 }
 // The answer's source chips — shared by live answers and replayed transcripts.
 function citesHtml(citations){

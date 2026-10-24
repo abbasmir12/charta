@@ -72,7 +72,7 @@ def list_chats(folder: str | pathlib.Path, limit: int = 20) -> list[dict]:
             chat = json.loads(p.read_text(encoding="utf-8"))
             msgs = chat.get("messages") or []
             out.append({"id": chat.get("id", p.stem),
-                        "title": chat.get("title") or "(no first question)",
+                        "title": chat.get("title") or "(untitled)",
                         "count": len(msgs),
                         "updated": (msgs[-1] or {}).get("at", "")
                         if msgs else chat.get("created", "")})
@@ -89,8 +89,6 @@ def append_message(folder: str | pathlib.Path, chat_id: str, q: str,
     if chat is None:
         chat = {"id": chat_id, "created": "", "title": "", "messages": []}
     chat["messages"] = chat.get("messages", [])
-    if not chat.get("title") and q.strip():
-        chat["title"] = q.strip()[:72]
     chat["messages"].append({
         "q": q.strip(), "answer": answer,
         "at": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -98,6 +96,81 @@ def append_message(folder: str | pathlib.Path, chat_id: str, q: str,
     })
     save(folder, chat)
     return chat
+
+
+def fallback_title(question: str) -> str:
+    """The no-model title: the first line of the question, trimmed."""
+    first = question.strip().splitlines()[0] if question.strip() else "New conversation"
+    return first[:60].strip(" -—:,")
+
+
+def set_title(folder: str | pathlib.Path, chat_id: str, title: str) -> bool:
+    """Name a conversation once — later edits never overwrite a real title."""
+    chat = load(folder, chat_id)
+    if chat is None or chat.get("title"):
+        return False
+    title = (title or "").strip()
+    if not title:
+        return False
+    chat["title"] = title[:60]
+    save(folder, chat)
+    return True
+
+
+def ai_title(question: str, answer: str, client: object,
+             timeout: float = 15.0) -> str | None:
+    """Ask the model for a short conversation title from the first exchange.
+
+    Strict JSON reply; one call (the client itself retries the transport),
+    and a fallback is expected from the caller when this returns None.
+    """
+    system = ('You name folder conversations. Reply with strict JSON only: '
+              '{"title": "2-6 word title"}. Keep the user\'s language, '
+              'no quotes inside the title, no commentary.')
+    prompt = (f"First question: {question[:300]}\n"
+              f"Answer (excerpt): {answer[:500]}")
+    try:
+        res = client.chat([{"role": "user", "content": prompt}],
+                          system=system, timeout=timeout)
+    except Exception:  # noqa: BLE001 — naming must never break the answer
+        return None
+    if not getattr(res, "ok", False):
+        return None
+    match = re.search(r'"title"\s*:\s*"([^"]{1,80})"', getattr(res, "text", "") or "")
+    return match.group(1).strip() if match else None
+
+
+def rel_time(iso: str, now: datetime.datetime | None = None) -> str:
+    """A short human age for the rail meta ('3 h ago', 'yesterday')."""
+    if not iso:
+        return ""
+    try:
+        stamp = datetime.datetime.fromisoformat(iso)
+    except ValueError:
+        return ""
+    now = now or datetime.datetime.now()
+    seconds = (now - stamp).total_seconds()
+    if seconds < 0:
+        seconds = 0
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{max(1, int(seconds // 60))} min ago"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)} h ago"
+    if seconds < 172800:
+        return "yesterday"
+    if seconds < 2592000:
+        return f"{int(seconds // 86400)} d ago"
+    return stamp.strftime("%d %b")
+
+
+def meta_line(count: int, updated: str) -> str:
+    """The rail item's meta: '2 messages, 3 h ago'. No dots, no em dashes."""
+    n = int(count or 0)
+    noun = "message" if n == 1 else "messages"
+    age = rel_time(updated)
+    return f"{n} {noun}, {age}" if age else f"{n} {noun}"
 
 
 def history_for(folder: str | pathlib.Path, chat_id: str,

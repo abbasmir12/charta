@@ -76,3 +76,62 @@ def test_reason_logged(tmp_path):
     ch = preset_charter("student")
     prop = propose_for_file("lecture_07.txt", "lecture 7", ch, None)
     assert prop.reason and len(prop.reason) > 10
+
+
+def test_approving_a_file_already_in_place_never_duplicates_it(tmp_path):
+    """A re-approved file must not become 'name (2)' — it is already where
+    the earlier approval put it (the restart re-scan bug)."""
+    import pathlib
+
+    from charta.core import mover as mover_mod
+    from charta.core.classify import Proposal
+
+    folder = tmp_path / "f"
+    folder.mkdir();(folder / "Bills").mkdir(parents=True)
+    (folder / "Bills" / "scan.pdf").write_text("x")
+    prop = Proposal(source="Bills/scan.pdf", dest_dir="Bills",
+                    new_name="scan.pdf", reason="organise")
+    r = mover_mod.apply_proposal(folder, prop)
+    assert r.moved is False and "already at its place" in r.reason
+    assert not list(folder.rglob("scan (2)*")), "the file duplicated itself"
+    assert (folder / "Bills" / "scan.pdf").exists()
+
+
+def test_a_decided_proposal_is_never_resurrected(tmp_path):
+    """Approving or rejecting once is final: a restart-scan must not put
+    the same file back into Review as pending again."""
+    import pathlib
+
+    from charta.core import proposals as prop_store
+    from charta.core.classify import Proposal
+
+    folder = tmp_path / "f2"
+    folder.mkdir()
+    prop_store.upsert(folder, Proposal(source="scan.pdf", dest_dir="Bills",
+                                       new_name="scan.pdf", reason="organise"))
+    prop_store.upsert(folder, Proposal(source="scan.pdf", dest_dir="Bills",
+                                       new_name="scan.pdf", reason="again",
+                                       status="approved"))
+    props = prop_store.load_proposals(folder)
+    assert len(props) == 1, "the approved proposal must not be duplicated"
+    assert props[0].status == "approved", "approval must not be overwritten"
+
+
+def test_a_renamed_approved_file_is_not_reproposed_after_restart(tmp_path):
+    """The restart-scan sees the file under its NEW name; that must not
+    re-propose a file an approval already organised."""
+    import pathlib
+
+    from charta.core import pipeline, proposals as prop_store
+    from charta.core.classify import Proposal
+
+    folder = tmp_path / "f3"
+    folder.mkdir();(folder / "Bills").mkdir(parents=True)
+    (folder / "Bills" / "efc_renamed.txt").write_text("amount: 10 EUR")
+    prop_store.upsert(folder, Proposal(source="efc.txt", dest_dir="Bills/2026",
+                                       new_name="efc_renamed.txt",
+                                       reason="clearer name", status="approved"))
+    seen = pipeline.organized_paths(folder)
+    assert "Bills/2026/efc_renamed.txt" in seen
+    assert "efc.txt" in seen
+    assert "Bills/efc_renamed.txt" not in seen  # only exact targets count

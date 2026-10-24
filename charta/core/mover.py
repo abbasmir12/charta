@@ -39,14 +39,22 @@ def apply_proposal(folder: str | pathlib.Path, prop: Proposal, dry_run: bool = F
     dest_dir = pathlib.Path(prop.dest_dir)
     if dest_dir.is_absolute() or ".." in dest_dir.parts:
         raise ProtectedPathError(f"Refusing unsafe destination: {prop.dest_dir}")
-    dst = unique_dest(root / dest_dir / prop.new_name)
+    target = root / dest_dir / prop.new_name
+    rel_src = str(src.relative_to(root)) if src.is_relative_to(root) else str(src)
+    if src.exists() and src.resolve() == target.resolve():
+        # Approving an already-placed file (e.g. after a restart re-scan)
+        # must not recreate it as "name (2)" — it is in place, done.
+        return MoveResult(False, rel_src,
+                          str(target.relative_to(root)) if target.is_relative_to(root)
+                          else str(target),
+                          "already at its place", dry_run)
+    dst = unique_dest(target)
     if dry_run:
         return MoveResult(False, str(src), str(dst), prop.reason, True)
     if not src.exists():
         raise FileNotFoundError(f"Source missing: {src}")
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(src), str(dst))
-    rel_src = str(src.relative_to(root)) if src.is_relative_to(root) else str(src)
     rel_dst = str(dst.relative_to(root)) if dst.is_relative_to(root) else str(dst)
     journal.record(root, rel_src, rel_dst, prop.reason)
     return MoveResult(True, rel_src, rel_dst, prop.reason, False)

@@ -25,6 +25,26 @@ class ProcessResult:
     dst: str = ""
 
 
+def organized_paths(root: pathlib.Path) -> set[str]:
+    """ Every file a decided proposal already put in place (or rejected).
+
+    Keyed by relative path with forward slashes: the proposal's own source
+    plus its destination — so a file that an approval *renamed or moved* is
+    not proposed again under its new name after a restart or a rescan.
+    """
+    paths: set[str] = set()
+    for x in prop_store.load_proposals(root):
+        if x.status not in ("approved", "rejected"):
+            continue
+        if x.source:
+            paths.add(x.source.replace("\\", "/"))
+        dest = x.dest_dir.replace("\\", "/").rstrip("/")
+        target = "/".join(part for part in (dest, x.new_name) if part)
+        if target:
+            paths.add(target)
+    return paths
+
+
 def process_new_file(folder: str | pathlib.Path, path: str | pathlib.Path,
                      charter: Charter, client: LLMClient | None = None,
                      auto_apply: bool = False, dry_run: bool = False,
@@ -44,7 +64,10 @@ def process_new_file(folder: str | pathlib.Path, path: str | pathlib.Path,
     report = detect(extracted.text)
     prop = propose_for_file(p.name, extracted.text, charter, client, report.sensitive)
     prop.source = str(p.relative_to(root)) if p.is_relative_to(root) else p.name
-    prop_store.upsert(root, prop)
+    # A file an earlier approval already placed (possibly under a new name)
+    # never returns to Review — the restart-scan must not undo the past.
+    if prop.source not in organized_paths(root):
+        prop_store.upsert(root, prop)
     _index_file(root, prop.source, extracted, report.sensitive)
 
     if not (auto_apply and prop.status == "pending"):

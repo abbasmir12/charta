@@ -27,6 +27,15 @@ def save_proposals(folder: str | pathlib.Path, props: list[Proposal]) -> None:
 
 
 def upsert(folder: str | pathlib.Path, prop: Proposal) -> None:
-    props = [x for x in load_proposals(folder) if x.source != prop.source]
-    props.append(prop)
+    props = load_proposals(folder)
+    for i, x in enumerate(props):
+        if x.source == prop.source:
+            # A decided proposal stays decided. Re-proposing the same file
+            # after a restart put it back into Review again and again.
+            if x.status in ("approved", "rejected"):
+                return
+            props[i] = prop
+            break
+    else:
+        props.append(prop)
     save_proposals(folder, props)

@@ -41,6 +41,22 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-23: **approved files no longer return to Review after a restart,
+  and approving an already-placed file cannot create "name (2)" anymore.**
+  The restart-scan called process_new_file for every file, and
+  proposals.upsert replaced the approved proposal with a fresh pending one
+  (same file back in Review); approving that duplicate found the target
+  occupied by the file itself, so the collision rule suffixed it (2).
+  Three fixes: upsert never resurrects a decided (approved/rejected)
+  proposal; the pipeline skips proposing files already at a decided
+  proposal's source OR destination path (organized_paths), so renamed or
+  moved approvals are recognised under their new name; and the mover treats
+  a self-move as a no-op ("already at its place") instead of a collision.
+  Files: `charta/core/proposals.py`, `pipeline.py`, `mover.py`,
+  `tests/test_safety.py`. Verified: `pytest -q` 236 passed, including a
+  replay of the exact restart-then-approve sequence.
+
+
 - 2026-10-23: **Review approve now feels final in the UI.** Approving used
   to post the request, dim the *first* card (not the one you acted on) and
   show a toast — the card stayed, unlike Reject which reloaded. Each card

@@ -1183,8 +1183,15 @@ def settings(folder: str = "", req: Request = None) -> str:  # type: ignore[assi
 <section class="section"><div class="section-head">
 <h2 class="section-title"><span class="icon">{icon("mic", 16)}</span> Voice</h2></div>
 <dl class="facts">
-<dt>Speech to text</dt><dd>Local Whisper ({cfg.whisper_model})</dd>
-<dt>Cloud option</dt><dd>ElevenLabs <span class="badge-sensitive">audio leaves your device</span>, off by default</dd>
+<dt>Speech to text</dt>
+<dd>
+  Whisper <span class="mono">{cfg.whisper_model}</span> · 
+  <span class="badge-sensitive" id="voice_provider_tag">({cfg.voice_provider})</span>
+</dd>
+<dt>ElevenLabs API key</dt>
+<dd><input type="text" id="elevenlabs_key" class="qbox"
+          value="{cfg.voice_api_key}" placeholder="sk-...">
+</dd>
 </dl></section>
 <section class="section"><div class="section-head">
 <h2 class="section-title"><span class="icon">{icon("folders", 16)}</span> Folders</h2>
@@ -1502,6 +1509,48 @@ def api_chat(folder: str, id: str) -> JSONResponse:
     if chat is None:
         return JSONResponse({"error": "no-chat"}, status_code=404)
     return JSONResponse(chat)
+
+
+
+
+@app.post("/api/voice")
+async def api_voice(req: Request) -> JSONResponse:
+    """Process voice: accept audio + provider, return transcript."""
+    body = await req.json()
+    audio_b64 = str(body.get("audio_base64", "")).strip()
+    provider = str(body.get("provider", "local")).strip()
+    api_key = str(body.get("api_key", "")).strip()
+    if not audio_b64 or not provider:
+        return JSONResponse({"error": "missing data"}, status_code=400)
+    try:
+        import base64
+        audio_bytes = base64.b64decode(audio_b64)
+    except Exception:
+        return JSONResponse({"error": "bad audio"}, status_code=400)
+    import tempfile, os
+    tmp = tempfile.mktemp(suffix=".wav")
+    with open(tmp, "wb") as f:
+        f.write(audio_bytes)
+    from charta.core.voice.stt import transcribe as _transcribe_local, transcribe_moonshine as _transcribe_moonshine, transcribe_elevenlabs as _transcribe_elevenlabs
+    try:
+        if provider == "moonshine":
+            text = _transcribe_moonshine(pathlib.Path(tmp))
+        elif provider == "elevenlabs":
+            if not api_key:
+                os.unlink(tmp)
+                return JSONResponse({"error": "api key needed"}, status_code=400)
+            text = _transcribe_elevenlabs(pathlib.Path(tmp), api_key)
+        else:
+            from faster_whisper import WhisperModel as _WM
+            m = _WM("small", device="cpu", compute_type="int8")
+            segments, _ = m.transcribe(tmp)
+            text = " ".join(s.text for s in segments).strip()
+        os.unlink(tmp)
+        return JSONResponse({"text": text, "provider": provider})
+    except Exception as e:
+        try: os.unlink(tmp)
+        except: pass
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @app.post("/api/ask")

@@ -36,7 +36,7 @@ PROVIDER_BASE_URLS: dict[str, str] = {
 }
 
 # Cloud providers: safe to pick up OPENAI_API_KEY from the environment.
-_CLOUD_PROVIDERS = {"openai", "openrouter", "groq", "together", "deepseek"}
+_CLOUD_PROVIDERS = {"openai", "openrouter", "groq", "together", "deepseek", "elevenlabs"}
 
 
 def default_state_dir() -> pathlib.Path:
@@ -69,6 +69,7 @@ class AppConfig:
     history: bool = True  # keep a private git history per watched folder
     voice_provider: str = "local"
     whisper_model: str = "small"
+    voice_api_key: str = ""
 
     @classmethod
     def load(cls, path: pathlib.Path | None = None) -> "AppConfig":

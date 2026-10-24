@@ -19,3 +19,38 @@ def transcribe(audio_path: str | pathlib.Path, model: str = "small") -> str:
 
 CLOUD_NOTICE = ("ElevenLabs speech-to-text is CLOUD: audio leaves your device. "
                 "It is off by default and requires opt-in.")
+
+# ── Moonshine (tiny, 80 MB) ─────────────────────────────────────────────
+try:
+    import moonshine
+    _MOONSHINE_AVAILABLE = True
+except ImportError:  # noqa: BLE001
+    _MOONSHINE_AVAILABLE = False
+def transcribe_moonshine(audio_path: str | pathlib.Path) -> str:
+    """Transcribe with Moonshine. Raises if not installed."""
+    if not _MOONSHINE_AVAILABLE:
+        raise RuntimeError("moonshine is not installed. pip install moonshine")
+    result = moonshine.transcribe(str(audio_path))
+    return str(result.get("text", "")).strip()
+# ── ElevenLabs (cloud) ──────────────────────────────────────────────────
+try:
+    import urllib.request
+    _ELEVENLABS_AVAILABLE = True
+except ImportError:  # noqa: BLE001
+    _ELEVENLABS_AVAILABLE = False
+def transcribe_elevenlabs(audio_path: str | pathlib.Path, api_key: str) -> str:
+    """Upload to ElevenLabs and return the transcript."""
+    if not _ELEVENLABS_AVAILABLE:
+        raise RuntimeError("elevenlabs is not installed")
+    with open(str(audio_path), "rb") as f:
+        audio_bytes = f.read()
+    payload = {
+        "audio_base64": base64.b64encode(audio_bytes).decode(),
+    }
+    url = "https://api.elevenlabs.io/v1/text‑speech"
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                 headers={"Authorization": f"Bearer {api_key}",
+                                          "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.load(resp)
+    return data.get("text", "").strip()

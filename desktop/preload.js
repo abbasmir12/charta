@@ -19,4 +19,10 @@ contextBridge.exposeInMainWorld('charta', {
   // Keep the native title bar in sync with the in-app theme toggle.
   setTheme: (theme) => ipcRenderer.send('charta:theme', String(theme || 'dark')),
   notify: (message) => ipcRenderer.send('charta:notify', String(message || '')),
+  // Voice hotkey: Electron main forwards Ctrl+Space → open the voice popup.
+  onVoiceToggle: (cb) => {
+    const handler = () => { try { cb(); } catch (e) { console.error(e); } };
+    ipcRenderer.on('voice:toggle', handler);
+    return () => ipcRenderer.removeListener('voice:toggle', handler);
+  },
 });

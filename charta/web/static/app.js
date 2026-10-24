@@ -8,6 +8,7 @@ const saved=localStorage.getItem('charta-theme');
 if(saved)root.dataset.theme=saved;
 else if(matchMedia('(prefers-color-scheme: dark)').matches)root.dataset.theme='dark';
 const DESKTOP=!!(window.charta&&window.charta.desktop);
+if(DESKTOP&&window.charta.onVoiceToggle)window.charta.onVoiceToggle(()=>{if(window.openVoicePopup)window.openVoicePopup();});
 const DEBUG=!!window.__CHARTA_DEBUG__;
 
 // One icon language: the server ships the Lucide bodies, we wrap them here.
@@ -595,6 +596,7 @@ async function watchJob(job,work){
  return null;
 }
 function renderAnswer(j){
+ if(window.showAnswerNotification)window.showAnswerNotification('Your answer is ready');
  const log=document.getElementById('log');
  // Sources at the end: file icon, file name, page badge — one click opens
  // the file itself (falls back to showing it in the file manager).
@@ -809,6 +811,94 @@ window.toggleMic=(taId)=>{const SR=window.SpeechRecognition||window.webkitSpeech
 const ta=document.getElementById(taId);if(!SR){toast('No browser speech engine here — local Whisper runs in the desktop/CLI.');return;}
 const r=new SR();r.onresult=ev=>{ta.value+=(ta.value?' ':'')+ev.results[0][0].transcript;};r.start();
 document.getElementById('micBtn')?.classList.add('rec');r.onend=()=>document.getElementById('micBtn')?.classList.remove('rec');};
+
+// --- Voice popup (Ctrl+Space) --------------------------------------------
+window.__voiceActive=false;
+window.openVoicePopup=async function(){
+ if(window.__voiceActive)return;
+ window.__voiceActive=true;
+ const popup=document.createElement('div');
+ popup.id='voice-popup';
+ popup.style.position='fixed';
+ popup.style.bottom='0';
+ popup.style.left='0';
+ popup.style.width='100%';
+ popup.style.maxWidth='400px';
+ popup.style.background='var(--surface)';
+ popup.style.borderTop='1px solid var(--border)';
+ popup.style.padding='var(--s3) var(--s4)';
+ popup.style.color='var(--text)';
+ popup.style.boxShadow='var(--sh3)';
+ popup.style.zIndex='9999';
+ popup.style.display='flex';
+ popup.style.flexDirection='column';
+ popup.style.gap='var(--s2)';
+ const h=document.createElement('div');
+ h.style.display='flex';
+ h.style.justifyContent='space-between';
+ h.style.alignItems='center';
+ h.style.marginBottom='var(--s2)';
+ const t=document.createElement('span');
+ t.textContent='Voice input';
+ const c=document.createElement('button');
+ c.textContent='×';
+ c.style.background='transparent';
+ c.style.border='none';
+ c.style.fontSize='1.2rem';
+ c.onclick=function(){popup.remove();window.__voiceActive=false;};
+ h.append(t,c);
+ const mic=document.createElement('button');
+ mic.type='button';
+ mic.style='flex:1;min-height:80px;background:var(--raised);border:none;border-radius:var(--r-in);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:var(--fs-body);cursor:pointer;';
+ mic.textContent='🎤 Hold to speak';
+ mic.onmousedown=async function(){window.__voiceActive=false;try{await window.__sendVoice();}catch(e){toast('Voice error: '+e.message,false);}};
+ const results=document.createElement('div');
+ results.style.overflow='auto';
+ results.style.flex='1';
+ results.style.minHeight='120px';
+ results.style.padding='var(--s2) 0';
+ results.style.color='var(--muted)';
+ results.innerHTML='<p>Waiting for input…</p>';
+ const send=document.createElement('button');
+ send.style.marginTop='var(--s2)';
+ send.style.width='100%';
+ send.style.padding='var(--s2) 0';
+ send.textContent='Send';
+ send.onclick=async function(){const txt=results.querySelector('p')?.textContent||'';if(txt){await window.__finishVoice(txt);}};
+ popup.append(h,mic,results,send);
+ document.body.append(popup);
+ window.__voicePopup=popup;
+};
+window.__finishVoice=async function(text){if(window.__voicePopup){window.__voicePopup.remove();}window.__voiceActive=false;
+ if(window.__onVoiceDone)window.__onVoiceDone(text);toast('Answer ready',true);};
+window.__sendVoice=async function(){const audio=await window.__recordAudio(3000);if(!audio)return toast('No audio captured',false);
+ window.__voiceResult=audio;};
+
+// --- Ctrl+Space global hotkey --------------------------------------------
+document.addEventListener('keydown',function(e){if(e.key===' '&&e.ctrlKey){e.preventDefault();
+ if(window.__voiceActive)return;window.openVoicePopup();}});
+
+// --- Answer ready notification -------------------------------------------
+window.__answerReady=false;
+window.showAnswerNotification=async function(message){
+ message=message||'Your answer is ready';
+ if(window.__answerReady)return;window.__answerReady=true;
+ const notif=document.createElement('div');
+ notif.style.position='fixed';
+ notif.style.bottom='80px';
+ notif.style.right='20px';
+ notif.style.background='var(--accent1)';
+ notif.style.color='var(--solid-fg)';
+ notif.style.padding='var(--s3) var(--s4)';
+ notif.style.borderRadius='var(--r-xs)';
+ notif.style.zIndex='9999';
+ notif.style.width='280px';
+ notif.style.boxShadow='var(--sh3)';
+ notif.textContent=message;
+ document.body.append(notif);
+ setTimeout(function(){notif.remove();window.__answerReady=false;},5000);
+};
+
 
 initDropdowns();
 window.loadOutput&&document.querySelector('.outcard')&&window.loadOutput();

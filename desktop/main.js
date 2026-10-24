@@ -7,7 +7,7 @@
 // the user's files — the backend owns that, with its own safety rules.
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, Tray, Menu, dialog, ipcMain, nativeImage, nativeTheme, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, dialog, ipcMain, nativeImage, nativeTheme, shell, globalShortcut, Notification } = require('electron');
 
 const backend = require('./lib/backend');
 const paths = require('./lib/paths');
@@ -110,6 +110,16 @@ function createWindow(bounds, url) {
   });
   win.on('closed', () => { win = null; });
   win.loadURL(url);
+  // Global hotkey: Ctrl+Space opens the voice popup even when minimized to tray.
+  try {
+    globalShortcut.register('CommandOrControl+Space', () => {
+      if (win && !win.isDestroyed()) {
+        win.show();
+        win.focus();
+        win.webContents.send('voice:toggle');
+      }
+    });
+  } catch (err) { log('globalShortcut registration failed: ' + err); }
   return win;
 }
 
@@ -345,6 +355,14 @@ async function main() {
   });
   ipcMain.on('charta:notify', (event, message) => {
     if (tray && message) tray.setToolTip(`${TITLE} — ${message}`);
+    // Show a native notification when the answer is ready.
+    if (message && /answer ready/i.test(message)) {
+      try {
+        const n = new Notification({ title: TITLE, body: message });
+        n.on('click', () => { if (win && !win.isDestroyed()) { win.show(); win.focus(); } });
+        n.show();
+      } catch (err) { log('notify failed: ' + err); }
+    }
   });
 
   if (SMOKE || SHOTS) {

@@ -117,14 +117,15 @@
 4. Outputs: tabs; receipts grid (sort/filter/export), notes, flashcards,
    data table.
 5. Gaps: ruled checklist (found / missing + note), progress ring.
-6. Ask: an app-level chat layout — a conversations rail (this folder's saved
-   chats, newest first, one "New" action) beside the chat pane. Empty state:
-   a centred greeting above the large rounded composer (autogrow textarea,
-   mic, model chip, solid send button) with starter cards beneath.
-   Conversation state: the log scrolls, the composer pins to the bottom.
+6. Ask: an app-level chat pane at full width — centred greeting above the
+   large rounded composer (autogrow textarea, mic, model chip, solid send
+   button) with starter cards beneath; once conversation starts the greeting
+   disappears, the log scrolls and the composer pins to the bottom. The
+   folder's conversations live in the main rail's Ask entry as a collapsible
+   subtree (title + message count, newest first, "New" action) that follows
+   the folder on every screen; clicking one replays and continues it.
    Rich answers (typed blocks), citation chips (icon + name + page badge,
-   one click opens the file), a calm "couldn't find" state, and the agent's
-   work as a collapsible block inside the chat.
+   one click opens the file), a calm "couldn't find" state.
 7. Activity: ruled log (`what / file / why / when`), Undo per row.
 7c. Search: the folder's metadata index — a search field, then one card per
    match with the file path, its one-line description, its tags, and the

@@ -415,13 +415,14 @@ function renderBlocks(blocks){
 // (.charta/chats/<id>.json): reopenable, and every follow-up sends the
 // earlier turns back to the model, so "and what about June?" works.
 window.__askChat=null;
-// One conversation rail item — the server's ask page renders the same markup.
+// One conversation rail item in the main sidebar (the server renders the
+// same markup as a link; JS intercepts so a chat opens without a reload).
 function convMarkup(c){
- return '<button type="button" class="conv-item'+(c.id===window.__askChat?' active':'')
-  +'" data-chat="'+c.id+'" onclick="openChat(this.dataset.chat)" '
-  +'title="continue this conversation">'
+ return '<a class="conv-item'+(c.id===window.__askChat?' active':'')+'" href="'
+  +'/ask?folder='+encodeURIComponent(folder())+'&chat='+encodeURIComponent(c.id)
+  +'" data-chat="'+c.id+'" onclick="openChat(this.dataset.chat);return false;">'
   +'<span class="cv-t">'+escHtml(c.title)+'</span>'
-  +'<span class="cv-m">'+c.count+' message(s)</span></button>';
+  +'<span class="cv-m">'+c.count+' message(s)</span></a>';
 }
 // The answer's source chips — shared by live answers and replayed transcripts.
 function citesHtml(citations){
@@ -446,7 +447,10 @@ function refreshChats(){
     +'starts one, and it stays in this folder.</p>';
  }).catch(()=>{});
 }
-window.newChat=()=>{
+window.newChat=(ev)=>{
+ // The rail's New button sits inside the collapsible summary: opening a
+ // new conversation must not collapse or expand the tree.
+ if(ev){ev.preventDefault();ev.stopPropagation();}
  window.__askChat=null;
  const pane=document.getElementById('chatpane');
  if(pane)pane.classList.remove('chatting');
@@ -456,6 +460,8 @@ window.newChat=()=>{
  const q=document.getElementById('q');if(q)q.focus();
 };
 window.openChat=async(id)=>{
+ const tree=document.getElementById('convtree');
+ if(tree)tree.open=true;
  let c;
  try{c=await api('/api/chat?folder='+encodeURIComponent(folder())+'&id='+encodeURIComponent(id));}
  catch(err){toast('Could not open that conversation.',false);return;}

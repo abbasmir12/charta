@@ -666,15 +666,15 @@ def test_the_dashboard_ask_box_stays_ephemeral(client, tmp_path):
 
 
 def test_the_ask_page_offers_saved_conversations_and_hides_the_tools(client, tmp_path):
-    """A conversations rail, a centred composer, starter cards; tools gone."""
+    """Conversations live in the main rail as a collapsible tree; tools gone."""
     import charta.core.chats as chats
 
     cid = chats.new_id()
     chats.append_message(tmp_path, cid, "What is in this folder?", "A few notes.")
 
     html = client.get("/ask", params={"folder": str(tmp_path)}).text
-    assert "Conversations" in html
-    assert "conv-item" in html and cid in html
+    assert "conv-tree" in html and "conv-item" in html and cid in html
+    assert f"chat={cid}" in html, "rail items link straight to the conversation"
     assert "newChat" in html
     # the modern chat layout: greeting centred, large composer, starter cards
     assert "chatpane" in html and "hero" in html
@@ -682,6 +682,18 @@ def test_the_ask_page_offers_saved_conversations_and_hides_the_tools(client, tmp
     assert "starter" in html and "What is in this folder?" in html
     assert "Tools the model can call" not in html
     assert "TOOL_HINT" not in html
+
+    # the tree follows the folder everywhere, not only on the Ask page
+    overview = client.get("/overview", params={"folder": str(tmp_path)}).text
+    assert "conv-tree" in overview and cid in overview
+
+    # opening a chat by link replays it on load
+    opened = client.get("/ask", params={"folder": str(tmp_path), "chat": cid}).text
+    assert f"openChat('{cid}')" in opened
+    # a forged chat id must not inject script
+    hacked = client.get("/ask", params={"folder": str(tmp_path),
+                                        "chat": "><script>alert(1)</script>"}).text
+    assert "alert(1)" not in hacked
 
 
 def test_an_unknown_chat_id_falls_back_to_a_fresh_conversation(client, tmp_path):

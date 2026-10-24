@@ -252,6 +252,27 @@ def shell(page: str, folder: str, inner: str, mode: str = "suggest", label: str 
                   f'<span class="icon">{icon("info", 14)}</span> Cloud: {provider}</button>')
     work = _nav(NAV_GROUPS[0][1], page, fq)
     records = _nav(NAV_GROUPS[1][1], page, fq)
+    # under Ask: the folder's saved conversations, collapsible in the rail
+    conv_block = ""
+    if fq:
+        saved = chats.list_chats(folder, 14)
+        conv_items = "".join(
+            f'<a class="conv-item" href="/ask?folder={fq}&chat={escape_attr(c["id"])}" '
+            f'data-chat="{escape_attr(c["id"])}" onclick="openChat(this.dataset.chat);return false;" '
+            f'title="open this conversation">'
+            f'<span class="cv-t">{escape_attr(c["title"])}</span>'
+            f'<span class="cv-m">{c["count"]} message(s)</span></a>'
+            for c in saved)
+        empty = '<p class="cv-empty muted">No conversations yet — ask something below.</p>'
+        conv_block = (
+            f'<details class="conv-tree" id="convtree"{" open" if saved else ""}>'
+            f'<summary title="This folder\'s saved Ask conversations">'
+            f'<span class="icon">{icon("chevron-right", 14)}</span>'
+            f'<span class="rail-sub-label">Conversations</span>'
+            f'<span class="spacer"></span>'
+            f'<button type="button" class="chip" onclick="newChat(event)" '
+            f'title="start a new conversation"><span class="icon">{icon("sparkles", 14)}</span> New</button></summary>'
+            f'<div class="conv-list" id="convlist" role="list">{conv_items or empty}</div></details>')
     settings_active = "active" if page == "settings" else ""
     folder_crumb = (
         f'<button type="button" class="crumb" onclick="openPicker()" title="{folder}">'
@@ -280,7 +301,7 @@ def shell(page: str, folder: str, inner: str, mode: str = "suggest", label: str 
 </header>
 <div class="layout">
 <nav class="sidebar" aria-label="Main">
-<div class="rail-group"><div class="rail-label">Work</div>{work}</div>
+<div class="rail-group"><div class="rail-label">Work</div>{work}{conv_block}</div>
 <div class="rail-group"><div class="rail-label">Records</div>{records}</div>
 <div class="rail-foot">
 <a href="/settings?folder={fq}" class="{settings_active}"><span class="icon">{icon("settings")}</span> Settings</a>
@@ -1048,7 +1069,7 @@ def gaps(folder: str = "") -> str:
 
 
 @app.get("/ask", response_class=HTMLResponse)
-def ask_page(folder: str = "", q: str = "") -> str:
+def ask_page(folder: str = "", q: str = "", chat: str = "") -> str:
     ch, mode = _page(folder, "ask")
     fq = quote(folder)
     cfg = _cfg()
@@ -1082,25 +1103,10 @@ def ask_page(folder: str = "", q: str = "") -> str:
         f'<span class="starter-body"><span class="starter-t">{t}</span>'
         f'<span class="starter-d">{d}</span></span></button>'
         for ic, t, d in starter_specs)
-    # the folder's saved conversations, ready to reopen and continue
-    saved = chats.list_chats(folder, 14)
-    conv_items = "".join(
-        f'<button type="button" class="conv-item" data-chat="{escape_attr(c["id"])}" '
-        f'onclick="openChat(this.dataset.chat)" title="continue this conversation">'
-        f'<span class="cv-t">{escape_attr(c["title"])}</span>'
-        f'<span class="cv-m">{c["count"]} message(s)</span></button>'
-        for c in saved) or (
-        '<p class="cv-empty muted">No conversations yet — your first question '
-        'starts one, and it stays in this folder.</p>')
     runs_chip = (f'<span class="chip" title="Where the answers come from.">'
                  f'<span class="icon">{icon("shield" if cfg.llm_provider in LOCAL_PROVIDERS else "info", 14)}</span>'
                  f'{cfg.generation_model}</span>')
     inner = f"""<div class="askwrap">
-<aside class="convs" aria-label="Earlier conversations">
-<div class="convs-head"><span class="rail-label">Conversations</span>
-<button type="button" class="chip" onclick="newChat()">{icon("sparkles", 14)} New</button></div>
-<div class="conv-list" id="convlist">{conv_items}</div>
-</aside>
 <section class="chatpane" id="chatpane">
 <div class="hero"><span class="hero-mark icon">{icon("sparkles", 22)}</span>
 <h1>What do you want to know about {_basename(folder)}?</h1>
@@ -1120,9 +1126,14 @@ placeholder="Ask about this folder — e.g. What electricity bills do we have fo
 <span class="mono">code {_code_revision()} · backend {_STARTED}</span></p></div>
 <div class="starters" aria-label="Try asking">{starters}</div>
 </section></div>"""
+    scripts = []
+    if chat.strip() and re.fullmatch(r"[A-Za-z0-9-]+", chat):
+        scripts.append(f"openChat({chat.strip()!r})")
     if q.strip():
-        inner += (f'<script>window.addEventListener("load",()=>askFolder('
-                  f'{q.strip()!r}));</script>')
+        scripts.append(f"askFolder({q.strip()!r})")
+    if scripts:
+        inner += ('<script>window.addEventListener("load",()=>{'
+                  + ";".join(scripts) + ';});</script>')
     return shell("ask", folder, inner, mode)
 
 

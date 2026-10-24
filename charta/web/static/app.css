@@ -155,23 +155,35 @@ table.grid tbody tr:hover td{background:var(--raised)}
 .sort-btn:hover{color:var(--text)}
 .sort-btn .icon{color:var(--faint)}
 
-/* conversations rail + chat pane: an app-level chat layout inside .main */
+/* conversations rail + chat pane: an app-level chat layout inside .main —
+   the conversations live in the main rail; the pane takes the full width */
 .main:has(>.askwrap){max-width:none;padding:0;overflow:hidden;display:flex}
-.askwrap{flex:1;display:grid;grid-template-columns:240px minmax(0,1fr);min-height:0;width:100%}
+.askwrap{flex:1;display:grid;grid-template-columns:minmax(0,1fr);min-height:0;width:100%}
 
-/* left: this folder's conversations (the reference's chat-history rail) */
-.convs{border-right:1px solid var(--border);min-height:0;overflow-y:auto;
-  padding:var(--s4) var(--s3);display:flex;flex-direction:column;gap:var(--s3)}
-.convs-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s2)}
-.conv-list{display:flex;flex-direction:column;gap:2px}
-.conv-item{display:flex;flex-direction:column;gap:1px;align-items:flex-start;
+/* the Ask entry's subtree in the main rail: this folder's conversations */
+.conv-tree{margin-top:var(--s2);margin-left:var(--s3)}
+.conv-tree summary{display:flex;align-items:center;gap:var(--s1);min-height:30px;
+  padding:0 var(--s3);border-radius:var(--r-in);cursor:pointer;list-style:none;
+  font:inherit;font-size:var(--fs-sm);font-weight:500;color:var(--muted);
+  transition:background var(--t-fast) var(--ease)}
+.conv-tree summary::-webkit-details-marker{display:none}
+.conv-tree summary:hover{background:var(--raised);color:var(--text)}
+.conv-tree summary .icon{color:var(--faint);transition:transform var(--t-base) var(--ease)}
+.conv-tree[open] summary .icon{transform:rotate(90deg)}
+.rail-sub-label{font-size:var(--fs-sm);font-weight:500}
+.conv-count{font-size:var(--fs-caption);color:var(--faint);margin-left:auto}
+.conv-tree summary .spacer{flex:1}
+.conv-list{display:flex;flex-direction:column;gap:2px;padding:2px 0 var(--s2) var(--s5)}
+.sidebar .conv-item, .sidebar a.conv-item{display:flex;flex-direction:column;
+  gap:1px;align-items:flex-start;min-height:0;
   background:transparent;border:none;border-radius:var(--r-in);cursor:pointer;
   padding:var(--s2) var(--s3);text-align:left;color:var(--text);font:inherit;width:100%;
+  text-decoration:none;
   transition:background var(--t-fast) var(--ease)}
-.conv-item:hover{background:var(--raised)}
-.conv-item.active{background:var(--raised);box-shadow:inset 2px 0 0 var(--accent1)}
+.sidebar .conv-item:hover{background:var(--raised);text-decoration:none}
+.sidebar .conv-item.active{background:var(--raised);box-shadow:inset 2px 0 0 var(--accent1)}
 .cv-t{font-size:var(--fs-sm);color:var(--text);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:196px}
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}
 .cv-m{font-size:var(--fs-caption);color:var(--faint)}
 .conv-item.active .cv-m{color:var(--accent1)}
 .cv-empty{font-size:var(--fs-sm);padding:var(--s2) var(--s3)}
@@ -241,7 +253,7 @@ table.grid tbody tr:hover td{background:var(--raised)}
 .cpage{font-size:var(--fs-caption);color:var(--muted);background:var(--solid);
   border-radius:var(--r-xs);padding:0 var(--s1)}
 
-@media (max-width:1100px){.askwrap{grid-template-columns:minmax(0,1fr)}.convs{display:none}}
+
 .msg{padding:var(--s3) var(--s4);border-radius:var(--r-card);max-width:82%;
   animation:fadeUp var(--t-base) var(--ease) both}
 .msg.me{background:var(--solid);color:var(--solid-fg);align-self:flex-end;border-bottom-right-radius:var(--r-xs)}

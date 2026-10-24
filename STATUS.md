@@ -41,7 +41,24 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
-- 2026-10-24: **the Ask page rebuilt around a modern chat layout** (from the
+- 2026-10-24: **conversations moved into the main rail as a collapsible
+  subtree under Ask** and the in-page conversations column removed. The
+  Work rail now shows "Conversations — [chips New]" under Ask on every
+  screen that has a folder: one tree item per saved chat (title, message
+  count, newest first), the tree opens automatically once chats exist,
+  and clicking an item opens it on the Ask page (the anchor href
+  /ask?folder=..&chat=.. degrades without JS; with JS the click is
+  intercepted so the chat opens without a reload, and the tree expands).
+  A question in a new chat refreshes the tree in place; the active
+  conversation gets the rail's accent edge, matching the active-page row.
+  New-chat measurement caught one CSS specificity trap: ".sidebar a" beat
+  ".conv-item" and re-imposed the row layout — items are now styled as
+  ".sidebar .conv-item" explicitly, and the crowding that clipped the New
+  chip was fixed by dropping the count chip (details + summary is the
+  accordion, no custom JS needed). Files: `charta/web/app.py`,
+  `charta/web/static/app.js`, `app.css`, `tests/test_web_ui.py`,
+  `DESIGN.md`. Verified: `pytest -q` 246 passed; `tools/ui_check.py`
+  36 screens clean; seeded two-conversation screenshot checked in light. Commit: d18bc6c.- 2026-10-24: **the Ask page rebuilt around a modern chat layout** (from the
   user's reference: chat-history sidebar, centred prompt, starter cards).
   The page is now a full-height app layout: a conversations rail (this
   folder's saved chats, newest first; below 1100px it folds away) beside a

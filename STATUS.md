@@ -63,7 +63,7 @@ pass and a recorded before/after demo.
   flagged. Files: `tools/make_flat.py`, `samples/flat-paperwork/*`,
   `charta/core/extract/__init__.py`.
   Verified: `pytest -q` 287 passed; extraction preview over all 27 files.
-  Commit: 36cb8be
+  Commit: 516f6e6
 
 - 2026-10-25: **Sentry Agent Tracing wired in — opt-in, no-op by default.**
   A new `charta/core/observability.py` wraps the ask agent's work in the

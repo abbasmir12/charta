@@ -6,21 +6,28 @@ tags: devchallenge, hf26challenge
 cover_image: 
 ---
 
-> **Hacktoberfest Open-Source AI Challenge, Week 3 — Slow and Steady.**
->
-> [Demo video](https://youtu.be/Y1YP2tSMvu4) · [Source](https://github.com/abbasmir12/charta) · [How to run it](#code)
+*Hacktoberfest Open-Source AI Challenge, Week 3 — Slow and Steady.*
+[Demo video](https://youtu.be/Y1YP2tSMvu4) · [Source](https://github.com/abbasmir12/charta) · [How to run it](#code)
 
-> ### The thirty second version
+> **11:47 pm. A folder called `Freelance`. Forty-two files. Zero subfolders.**
 >
-> Right-click any folder in Windows Explorer → **Watch with Charta** → answer one question: *"what is this folder for?"*
+> `facture-EDF-janv-2026 (1).pdf`. `Scan_0031.pdf`. `new_document(2).pdf`. A photo of the meter, a bank export, a lease, five rent receipts, a plumber's invoice, a renovation quote, a warranty. Everything you will ever need is already in that folder — and nothing in it is findable.
+
+Every computer has this folder. Not a knowledge base, just a pile. Sorting it is unpaid administrative labour, and doing it well asks for exactly the kind of attention nobody has at midnight.
+
+**Charta turns that pile into a folder that files itself.**
+
+> Right-click it in Explorer → **Watch with Charta** → *"This is where I keep my freelance paperwork: invoices, rent, insurance."*
 >
-> From then on you just drop files into it. Charta reads each one, renames it, files it into the right folder and subfolder, and writes down what is inside it.
+> That one sentence becomes `.charta/charter.md` — plain Markdown, inside the folder, yours to edit. Everything below follows from it.
 >
-> Later, when you ask *"how much did I spend since January?"*, it does not re-read your folder. It asks its own index — and answers with the amount, the file, and the page.
+> From then on, **nothing enters that folder unseen.** You drop a file in; Charta reads it, works out what it is, renames it if the name is garbage, files it into the right folder and subfolder, and writes a row for it into the folder's own index. You approve, it moves.
+>
+> And when you ask *"how much did I spend since January?"*, it does not open forty PDFs. It reads the index — and answers with the amount, the file, and the page it came from.
 
 ## What I Built
 
-Charta is a **magic folder**. Any folder on your machine — `D:\Freelance`, `C:\Users\me\Desktop\paperwork`, a student's `Lectures` — can become an intelligent folder. You point at it in Explorer, choose **Watch with Charta**, and give it a purpose in one sentence, typed or spoken. A local Gemma model turns that sentence into a **Folder Charter**: a plain Markdown file, stored inside the folder itself.
+Charta is a **magic folder**. Any folder on your machine — `D:\Freelance`, `C:\Users\me\Desktop\paperwork`, a student's `Lectures` — can become an intelligent folder: one you point at in Explorer, charter in a sentence, and then simply use. The AI is local (a Gemma model through Ollama), so the watching, the reading and the answering all happen on your own disk.
 
 ```
 D:\Freelance\
@@ -29,27 +36,56 @@ D:\Freelance\
     journal.jsonl   <- every move, undoable
     index.db        <- what each file contains
   Invoices\
-    2026-03-edf-electricity.pdf
-    2026-04-orange-internet.pdf
+    2026-04-edf-electricity.pdf
+    2026-05-orange-internet.pdf
   Rent\
     2026-04-receipt.pdf
 ```
 
-After that, the folder runs a loop on its own:
+### Nothing enters that folder unseen
+
+Once a folder is watched, every file that lands in it — dragged from Downloads, saved from a browser, scanned from a printer, unzipped from an email — goes through the same loop:
 
 > 1. **A file lands.** You drag an invoice, a lecture, a scan, a spreadsheet into the folder.
 > 2. **Charta waits until it is fully written**, then reads it — PDF text, DOCX, XLSX, images through the model's vision.
-> 3. **It proposes a name and a place** based on the charter: `new_document(2).pdf` → `Electricity/2026-04-edf-electricity.pdf`. Nothing moves until you approve it — default mode is *suggest*, so the folder does the thinking and you keep the authority.
+> 3. **It proposes a name and a place** based on the charter: `new_document(2).pdf` → `Invoices/2026-04-edf-electricity.pdf`. Nothing moves until you approve it — default mode is *suggest*, so the folder does the thinking and you keep the authority.
 > 4. **On approval it moves and renames** — never deletes, never overwrites, always with a numeric suffix on collision and an entry in the undo journal.
 > 5. **It writes down what is inside** — document type, vendor, date, amount, tags, and the text itself. That is the index.
+> 6. **Every change stays on the record** — the journal for moves (one click to undo) and a local history for moves, renames, edits and undo, committed with a plain-English reason. A bad decision never costs you a file.
 
-Then the payoff part. Ask the folder a question:
+### The index is the trick
+
+This is the part that makes the folder feel intelligent instead of merely tidy. Charta does its reading **once**, when a file arrives, and keeps what it learned in `.charta/index.db` — a plain SQLite file that belongs to that folder and travels with it.
+
+One row per file: what it is, what is inside it, which fields were found, and the text itself, chunked by page.
+
+```text
+path         Invoices/2026-04-edf-electricity.pdf
+name         (was: new_document(2).pdf)
+doc_type     electricity bill
+description  EDF electricity bill for April 2026, due 15/05/2026
+fields       vendor EDF · amount 82.50 EUR · date 2026-04
+tags         edf electricity invoice 2026
+chunks       p1  "Facture EDF - avril 2026 / Consommation kWh: 04711 / Montant TTC: 82,50 EUR"
+```
+
+That row is the whole point. When you ask a question, the agent does not walk the folder and it does not stuff your PDFs into a context window. It searches this table — keyword/BM25 plus regex over dates, months, amounts and document types, with each file's description as a strong signal — and hands the model the metadata and the few matching chunks that actually matter.
+
+> The difference is not subtle.
+>
+> **Without an index:** open the folder, pick files by name, open each one, hope. Or paste your rent contract into a cloud chat and lose it forever.
+>
+> **With an index:** one query over a table the folder wrote about itself, a handful of matching rows, an answer in seconds, a citation you can click.
+>
+> It also means questions get *cheaper*, not more expensive: the AI paid for the reading once, at drop time, and every later question reads text it already understood.
+
+### Then ask it anything
 
 > **You:** how much did I spend on electricity this year?
 >
 > **Charta:** €322.00 across four EDF bills — January (€79.40), February (€71.20), April (€82.50), May (€88.90).
 >
-> *Sources: the four EDF bills in `Electricity/`, each with its page number.*
+> *Sources: the four EDF bills in `Invoices/`, each with its page number.*
 >
 > And it notices what is **not** there: *"there is no electricity bill for March — the folder expects one per month."*
 

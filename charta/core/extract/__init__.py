@@ -35,6 +35,8 @@ def extract_text(path: str | pathlib.Path, vision: VisionFn | None = None) -> Ex
             return _extract_pdf(p, vision)
         if suf == ".docx":
             return _extract_docx(p)
+        if suf in (".xlsx", ".xlsm", ".xltx"):
+            return _extract_xlsx(p)
         if suf in IMAGE_SUFFIXES:
             return _extract_image(p, vision)
         return ExtractResult(f"[unsupported: {p.name}]", 1, "stub")
@@ -102,12 +104,48 @@ def extract_many(paths: Sequence[str | pathlib.Path], vision: VisionFn | None = 
 
 
 def _extract_docx(p: pathlib.Path) -> ExtractResult:
+    # Prefer python-docx when it is installed (preserves paragraphs).
     try:
-        import docx  # python-docx
+        import docx
 
         doc = docx.Document(str(p))
         return ExtractResult("\n".join(par.text for par in doc.paragraphs)[:20000], 1, "docx")
     except ImportError:
-        return ExtractResult(f"[docx without python-docx: {p.name}]", 1, "missing-dep")
+        pass  # fall through to the stdlib-only reader below
     except Exception as e:  # noqa: BLE001
         return ExtractResult(f"[docx-error: {e}]", 1, "error")
+    # Fallback: a .docx is just a zip of XML — read the body text directly.
+    try:
+        import re
+        import zipfile
+
+        with zipfile.ZipFile(p) as z:
+            xml = z.read("word/document.xml").decode("utf-8", errors="replace")
+        text = re.sub(r"<[^>]+>", " ", xml)
+        text = " ".join(text.split())
+        if text.strip():
+            return ExtractResult(text[:20000], 1, "docx-xml")
+    except Exception as e:  # noqa: BLE001
+        return ExtractResult(f"[docx-error: {e}]", 1, "error")
+    return ExtractResult(f"[docx without python-docx: {p.name}]", 1, "missing-dep")
+
+
+def _extract_xlsx(p: pathlib.Path) -> ExtractResult:
+    try:
+        import openpyxl
+    except ImportError:
+        return ExtractResult(f"[xlsx without openpyxl: {p.name}]", 1, "missing-dep")
+    try:
+        wb = openpyxl.load_workbook(str(p), data_only=True)
+        lines: list[str] = []
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(c) for c in row if c is not None]
+                if cells:
+                    lines.append(" | ".join(cells))
+        text = "\n".join(lines)
+        if text.strip():
+            return ExtractResult(text[:20000], len(wb.worksheets) or 1, "xlsx")
+    except Exception as e:  # noqa: BLE001
+        return ExtractResult(f"[xlsx-error: {e}]", 1, "error")
+    return ExtractResult(f"[empty xlsx: {p.name}]", 1, "xlsx-empty")

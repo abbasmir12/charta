@@ -48,6 +48,23 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-25: **A messy real-world sample folder for the demo.** New
+  `tools/make_flat.py` generates 27 files into `samples/flat-paperwork/`
+  (flat at the root, so the agent has real organizing to do): EDF electricity
+  bills (January, February, April, May — March deliberately missing), a meter
+  photo, Orange internet invoices, a lease + 5 rent receipts, MAIF insurance
+  attestation + renewal notice, a bank CSV + transfer confirmations, a plumber
+  invoice, a bathroom renovation quote, a Bosch warranty, a landlord letter
+  (.docx), a mail, a todo, notes, a .xlsx meter sheet, photos, and a
+  sensitive residence-permit PDF carrying an IBAN. `extract_text` now also
+  reads `.xlsx` (openpyxl) and falls back to a stdlib zipfile reader for
+  `.docx` when python-docx is not installed, so every file in the folder is
+  readable on a clean machine; the sensitive file is detected (IBAN) and
+  flagged. Files: `tools/make_flat.py`, `samples/flat-paperwork/*`,
+  `charta/core/extract/__init__.py`.
+  Verified: `pytest -q` 287 passed; extraction preview over all 27 files.
+  Commit: 05978ba
+
 - 2026-10-25: **Sentry Agent Tracing wired in — opt-in, no-op by default.**
   A new `charta/core/observability.py` wraps the ask agent's work in the
   spans Agent Tracing understands: `gen_ai.invoke_agent` ("invoke_agent

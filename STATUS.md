@@ -41,7 +41,7 @@ pass and a recorded before/after demo.
       the tray) records, transcribes, and asks; an answer-ready
       notification fires when the window is hidden.
 
-- [x] 274 pytest tests, Electron unit tests, 36 measured UI screens.
+- [x] 287 pytest tests, 9 Electron unit tests, 36 measured UI screens.
 - [x] `charta demo`: deterministic messy folder + preset charter + propose +
       approve + purpose output in one command; offline by default, `--ai` to
       use the configured model, `--dry-run`, `--reset`, `--watch`.
@@ -59,7 +59,7 @@ pass and a recorded before/after demo.
   model-bound, lexical retrieval). Performance numbers regenerated: 287 pytest
   in 22 s, 9 Electron unit tests, 36 measured web screens. Files: `README.md`.
   Verified: `pytest -q` 287 passed; `npm test` 9 passed; `tools/ui_check.py`
-  "OK — 36 screens verified" with no console errors. Commit: "
+  "OK — 36 screens verified" with no console errors. Commit: c89041b"
 - 2026-10-25: **UI screenshot baseline regenerated for the new routes.**
   `tools/ui_check.py` now covers 12 routes, but `docs/screenshots/` still held
   the 9-route set, so `files`, `folders` and `history` had no image. Re-ran the
@@ -67,7 +67,7 @@ pass and a recorded before/after demo.
   passing, 9 new PNGs added and 27 refreshed. `npm run smoke` could not run here
   (no X display), so the Electron claim stays manual. Files:
   `docs/screenshots/*`. Verified: `tools/ui_check.py` → "OK — 36 screens
-  verified". Commit: "
+  verified". Commit: fc79383"
 - 2026-10-25: **DEVPOST trimmed per submission pass.** Removed the
   "My Agent Session" section (and the day-list-style commentary it carried),
   reduced Demo to the embedded video plus one caption explaining what it

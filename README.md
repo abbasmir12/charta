@@ -1,4 +1,4 @@
-# Charta
+# Charta — Make any folder intelligent
 
 **Right-click any folder in Windows → "Watch with Charta" → the folder files itself.**
 
@@ -7,6 +7,8 @@ reads each file once, renames it, moves it into the right subfolder, and writes 
 row about it into a small local index. After that, asking the folder a question
 ("how much did I spend since January?") reads the **index**, not the pile of
 files. Your AI memory is a Markdown file you own and can edit.
+
+*GitHub repo description: Right-click any folder to make it intelligent. Drop files and it auto-organizes, renames, and indexes them. Ask questions like 'how much did I spend since January?' and get answers from the local index. Works with any OpenAI-compatible model (Ollama locally or OpenAI/OpenRouter/etc. in cloud).*
 
 <a href="https://youtu.be/Y1YP2tSMvu4"><img src="https://img.youtube.com/vi/Y1YP2tSMvu4/maxresdefault.jpg" alt="Charta demo — drop invoices into a watched folder and watch it file itself" width="720"></a>
 

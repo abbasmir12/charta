@@ -59,7 +59,7 @@ pass and a recorded before/after demo.
   where the user left off. Tests: rail-complete, remembered-folder, fresh-
   machine. Files: `charta/web/app.py`, `tests/test_web_ui.py`.
   Verified: `pytest -q` 277 passed; `tools/ui_check.py` 36 screens (setup
-  screenshot shows the full rail). Commit: dd1b124
+  screenshot shows the full rail). Commit: 6f40d92
 
 - 2026-10-25: **the voice wave, properly this time: push-to-talk popup,
   real STT providers, and a full Settings UI that writes config.toml.**

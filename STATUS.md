@@ -48,6 +48,17 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-25: **DEVPOST trimmed per submission pass.** Removed the
+  "My Agent Session" section (and the day-list-style commentary it carried),
+  reduced Demo to the embedded video plus one caption explaining what it
+  shows (drop invoices → Charta creates `Invoices/`, moves and renames them,
+  indexes them), and promoted the provider story: the Code note and the model
+  bullet now lead with "any OpenAI-compatible endpoint" — Ollama / LM Studio /
+  llama.cpp / vLLM locally, OpenRouter / Groq / Together / DeepSeek / OpenAI
+  in the cloud — matching `charta/core/llm.py`. Files: `DEVPOST.md`.
+  Verified: docs only; provider list and `config.toml` `[llm]` claims checked
+  against the code. Commit: 438ed45
+
 - 2026-10-25: **DEVPOST intro rewritten around the drop-and-index story.**
   The post now opens on a concrete scene (11:47 pm, 42 files, zero
   subfolders, `Scan_0031.pdf`-style names), states that nothing enters a

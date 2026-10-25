@@ -323,7 +323,7 @@ def shell(page: str, folder: str, inner: str, mode: str = "suggest", label: str 
 <script>window.__CHARTA_DEBUG__={"true" if _debug() else "false"};window.__CHARTA_BUILD__={BUILD!r};window.__ICONS__={icons.manifest()};</script></head>
 <body>
 <header class="appbar" id="appbar">
-<span class="brand"><span class="mark" aria-hidden="true">{icon("file", 13)}</span> Charta</span>
+<span class="brand"><img class="mark" src="/logo.png" alt="" width="18" height="18" aria-hidden="true"> Charta</span>
 <nav class="crumbs" aria-label="Breadcrumb">{folder_crumb}<span class="crumb-cur">{here}</span></nav>
 <span id="thinking" class="live" role="status" aria-live="polite">{THINKING['msg']}</span>
 <span class="spacer"></span>
@@ -421,6 +421,14 @@ for example <span class="mono">Documents/Receipts</span>.</p>
 def favicon() -> Response:
     if ICON.exists():
         return FileResponse(str(ICON), media_type="image/x-icon")
+    return Response(status_code=404)
+
+
+@app.get("/logo.png", include_in_schema=False)
+def logo() -> Response:
+    p = ASSETS / "charta.png"
+    if p.exists():
+        return FileResponse(str(p), media_type="image/png")
     return Response(status_code=404)
 
 

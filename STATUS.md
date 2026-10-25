@@ -48,6 +48,18 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-25: **DEVPOST intro rewritten around the drop-and-index story.**
+  The post now opens on a concrete scene (11:47 pm, 42 files, zero
+  subfolders, `Scan_0031.pdf`-style names), states that nothing enters a
+  watched folder unseen, walks the loop in six quoted steps (including the
+  journal/history step for undo), and adds a "The index is the trick"
+  section with a real index row (path, doc type, fields, tags, page chunk)
+  plus the without/with-index contrast. Facts checked against
+  `charta/core/index_db.py`, `watcher.py` and `tools/make_flat.py`; the copy
+  says "nothing enters unseen" rather than claiming outbound deletes are
+  tracked, because the watchdog handler only observes `on_created`. Files:
+  `DEVPOST.md`. Verified: docs only; no code touched. Commit: 7e2ff10
+
 - 2026-10-25: **DEVPOST.md rewritten for submission.** Real demo video
   (`https://youtu.be/Y1YP2tSMvu4`) and repository
   (`github.com/abbasmir12/charta`) links replace the placeholders; the post

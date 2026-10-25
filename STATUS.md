@@ -57,7 +57,7 @@ pass and a recorded before/after demo.
   uses a blockquote/nested-quote layout for the summary, the file loop, the
   example answer, stack bullets, Sentry spans and prize categories. Files:
   `DEVPOST.md`. Verified: docs only — link and number check against
-  `tools/make_flat.py`; no code touched.
+  `tools/make_flat.py`; no code touched. Commit: cc530b5
 
 - 2026-10-25: **A messy real-world sample folder for the demo.** New
   `tools/make_flat.py` generates 27 files into `samples/flat-paperwork/`

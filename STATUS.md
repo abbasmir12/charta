@@ -72,7 +72,9 @@ pass and a recorded before/after demo.
   `charta/web/app.py`, `charta/web/static/app.{js,css}`,
   `desktop/main.js`, `desktop/preload.js`, `tests/`, `DESIGN.md`.
   Verified: `pytest -q` 274 passed; `node --check` on all JS;
-  `tools/ui_check.py` pending below. Commit: see next line.
+  `tools/ui_check.py` 36 screens clean (incl. the settings in three themes);
+  Playwright fake-mic walkthrough: press → popup + record, release → stop →
+  server round trip, no page errors. Commit: 0f07ad4.
 
 - 2026-10-24: **conversation titles now come from the AI on first exchange;
   rail meta rewritten; "+ New" button replaces the text chip.** At the end of

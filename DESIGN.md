@@ -126,8 +126,17 @@
    start new) that follows the folder on every screen; clicking an item
    replays and continues it. The AI names a conversation at the end of its
    first exchange (fallback: the question's first line). Rich answers
-   (typed blocks), citation chips (icon + name + page badge, one click opens
-   the file), a calm "couldn't find" state.
+   (typed blocks rendered with entrance+depth: message rise, sticky table
+   headers, styled quotes), citation chips (icon + name + page badge, one
+   click opens the file), a calm "couldn't find" state. Push-to-talk:
+   Ctrl+Space opens a bottom voice popup — token-styled sheet with a pulsing
+   mic orb (accent flips to `--danger` while recording), a status line, and
+   the transcript preview; in the browser hold = record, release =
+   transcribe; in the desktop shell the combo is registered globally
+   (Electron `globalShortcut`), press to start / press again to stop, works
+   while the window sits in the tray. The transcript lands in the composer
+   and sends; an answer-ready toast/native notification fires only when the
+   window is hidden or the question came by voice.
 7. Activity: ruled log (`what / file / why / when`), Undo per row.
 7c. Search: the folder's metadata index — a search field, then one card per
    match with the file path, its one-line description, its tags, and the
@@ -138,8 +147,15 @@
    with date, short sha, message and the files it touched. Every index, move,
    edit, trash and rebuild is a commit, so the user can see exactly what
    changed and why, and `git log` works in their own terminal too.
-8. Settings: ruled sections with `.facts` — provider+health, voice, window,
-   privacy ("all local", "no delete button").
+8. Settings: editable, not read-only — ruled sections with `.facts
+   facts-form`: AI provider (provider dropdown incl. `custom`, base URL,
+   api key with Clear, generation/vision models, vision toggle, timeout +
+   retries) and Voice (STT provider with per-backend availability hints,
+   whisper/moonshine model names, ElevenLabs key with cloud chip that
+   flips to "cloud — audio leaves this device"), then a `.savebar` that
+   writes machine-local config.toml (`.facts` rows stay for folders,
+   window, privacy). Secrets render as password inputs showing only
+   "stored" / empty placeholders — a GET never returns the key itself.
 
 ## 6. Trust/safety, states, a11y, perf
 

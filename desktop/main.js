@@ -350,6 +350,7 @@ async function main() {
 
   app.on('window-all-closed', () => { quitting = true; app.quit(); });
   app.on('before-quit', () => { quitting = true; saveGeometry(win); backend.stop(child); });
+  app.on('will-quit', () => { try { globalShortcut.unregisterAll(); } catch (_) {} });
   ipcMain.on('charta:theme', (event, theme) => {
     if (win && event.sender === win.webContents) applyTheme(win, theme);
   });

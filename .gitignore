@@ -9,7 +9,9 @@ venv/
 
 # Your own settings: config.toml belongs to the machine, so `git pull` can
 # never bring back the file you edited. config.toml.example is the template.
+# The Settings UI keeps a one-step backup beside it when saving.
 config.toml
+config.toml.bak
 
 # Tests / tooling
 .pytest_cache/

@@ -32,14 +32,47 @@ pass and a recorded before/after demo.
       tray menu, and per-folder "Being watched with Charta" verbs.
 - [x] Local web UI (FastAPI + plain HTML/CSS/JS, no bundler, no CDN) and an
       Electron desktop shell with custom chrome, tray, and hardened defaults.
-- [x] Voice input interface (`faster-whisper` locally) and vision for scanned
-      PDFs/images through the same model client.
+- [x] Voice input interface (faster-whisper locally by default; Moonshine,
+      system speech, or cloud ElevenLabs selectable in Settings) and vision
+      for scanned PDFs/images through the same model client.
+- [x] The Settings page is editable — provider, base URL, key, models,
+      voice provider — saved straight into machine-local config.toml.
+- [x] Push-to-talk voice: Ctrl+Space (global in the Electron shell, even from
+      the tray) records, transcribes, and asks; an answer-ready
+      notification fires when the window is hidden.
+
+- [x] 274 pytest tests, Electron unit tests, 36 measured UI screens.
 - [x] `charta demo`: deterministic messy folder + preset charter + propose +
       approve + purpose output in one command; offline by default, `--ai` to
       use the configured model, `--dry-run`, `--reset`, `--watch`.
-- [x] 246 pytest tests, Electron unit tests, 27 measured UI screens.
 
 ## Done Log
+
+- 2026-10-25: **the voice wave, properly this time: push-to-talk popup,
+  real STT providers, and a full Settings UI that writes config.toml.**
+  The last wave shipped a popup that called `window.__recordAudio` — a
+  function that never existed — and a fake ElevenLabs endpoint; both are
+  gone. Now: `charta/voice/stt.py` is a real provider dispatcher (local
+  Whisper, Moonshine ONNX with webm→16 kHz PCM conversion via PyAV,
+  system/SpeechRecognition, and a real ElevenLabs multipart upload with
+  friendly HTTP errors); `POST /api/voice` takes raw audio bytes and uses
+  the configured provider (client never handles keys); `GET/POST
+  /api/settings` read/write `[llm]`/`[models]`/`[voice]` in config.toml
+  (atomic write + `.toml.bak`, `null` clears a key, `""` keeps it, stale
+  stock base URLs drop on provider switch) and the Settings page is an
+  editable form with a save bar. Ctrl+Space is push-to-talk in the browser
+  (hold=record, release=transcribe) and a global toggle in Electron
+  (works from the tray); the bottom voice popup is token-styled CSS with a
+  pulsing orb; transcripts land in the Ask composer and auto-send; when an
+  answer completes, a toast / native notification fires if the window is
+  hidden or the question was asked by voice. Answers got an entrance
+  animation, depth, sticky table headers and styled quotes. New tests:
+  `tests/test_stt.py` (15), `tests/test_settings_voice.py` (8).
+  Files: `charta/voice/stt.py`, `charta/core/config.py`,
+  `charta/web/app.py`, `charta/web/static/app.{js,css}`,
+  `desktop/main.js`, `desktop/preload.js`, `tests/`, `DESIGN.md`.
+  Verified: `pytest -q` 274 passed; `node --check` on all JS;
+  `tools/ui_check.py` pending below. Commit: see next line.
 
 - 2026-10-24: **conversation titles now come from the AI on first exchange;
   rail meta rewritten; "+ New" button replaces the text chip.** At the end of
@@ -571,12 +604,22 @@ pass and a recorded before/after demo.
   (149 passed), the UI measurement script (27 screens), and a headless Electron
   smoke run. Earlier development history is kept in a local archive branch.
 
+## In Progress
+
+- Windows verification of this wave on a real machine: the global Ctrl+Space
+  from the tray, Moonshine against the model the user downloaded, and the
+  settings round-trip on real config.toml (`git pull; charta stop; charta open .`).
+
 ## Next Up
 
-1. (user) Try the new Ask on Windows: the chat strip, continuing a
+1. (user) Try the voice wave on Windows: Ctrl+Space from the tray, Moonshine
+   transcription, the editable Settings page, and the answer-ready
+   notification.
+2. (user) Try the new Ask on Windows: the chat strip, continuing a
    conversation, follow-up memory, and opening a source chip.
-2. Windows visual pass: Explorer menu, tray, Mica/title bar, close-to-tray.
-3. Record a 60–90s before/after demo (`charta demo` → sorted folder + output).
+3. Windows visual pass: Explorer menu, tray, Mica/title bar, close-to-tray,
+   then a recorded 60–90s before/after demo (`charta demo` → sorted folder +
+   output).
 
 ## Blockers & Open Questions
 
@@ -591,6 +634,13 @@ pass and a recorded before/after demo.
   works with zero extra installs?
 
 ## Decisions
+
+- 2026-10-25: the Settings UI writes the user's `config.toml` directly
+  (atomic write, one `.toml.bak` backup) instead of a shadow override file.
+  Why: AGENTS says one config file, and a second layer would make the
+  relationship between ".env vs UI vs file" impossible to reason about. GET
+  reports whether a key exists, never the key; env keys stay env's business
+  and are never copied into the file by the UI.
 
 - 2026-10-24: conversations are files, not a hidden database —
   `.charta/chats/<id>.json` inside the folder the chat is about. Why: same
@@ -642,6 +692,18 @@ pass and a recorded before/after demo.
 
 ## Failures & Lessons
 
+- 2026-10-25: the previous voice wave shipped half-wired: the popup called
+  `window.__recordAudio`, a function that never existed (the user hit
+  "not a function" on first press), and `stt.py` had an illustrative
+  ElevenLabs endpoint (an up-arrow Unicode dash inside the URL, no real
+  upload). Root cause: the edits marched file-by-file with print-based
+  confirmations instead of a single wired path proven end to end, and a
+  heredoc quoting bug left the frontend untouched while later reports were
+  still "js ok". Lesson: a wave is not done because its pieces each parse —
+  grep every identifier the generated UI references, then exercise the
+  actual flow (press → record → server → text → composer) before calling it
+  delivered. The tests in `tests/test_settings_voice.py` now exercise the
+  exact HTTP surfaces the popup uses.
 - 2026-10-24: building `onclick="openChat('<id>')"` as a JS string meant
   nested quoting — the `\\'` escapes landed literally in app.js and
   `node --check` failed (missing `)` after argument list), and a later

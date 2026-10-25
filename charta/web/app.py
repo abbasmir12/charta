@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import os
 import pathlib
 import re
 import threading
@@ -38,6 +39,8 @@ TOOL_HINT = ("search_index looks through the folder's metadata (names, descripti
              "is there. Every call is shown above as it happens.")
 from ..core.charter import create_charter_from_text, load_charter, save_charter
 from ..core.config import AppConfig
+from ..core.config import load_document, save_document
+from ..core.config import PROVIDER_BASE_URLS, config_path
 from ..core.extract import VisionFn, extract_text
 from ..core.llm import LLMClient
 from ..core.outputs import build_data_entry, build_receipts, build_study
@@ -1162,37 +1165,76 @@ def activity(folder: str = "") -> str:
 def settings(folder: str = "", req: Request = None) -> str:  # type: ignore[assignment]
     cfg = _cfg()
     up = LLMClient(cfg).ping()
+    from ..voice import stt as stt_mod
+    from ..core.config import PROVIDER_BASE_URLS as _PBU
+    # Editable options for the two dropdowns; availability shown inline so the
+    # user can see at a glance why a provider may refuse.
+    PROVIDERS_UI = sorted(_PBU) + ["custom"]
+    VOICES_UI: list[tuple[str, str]] = []
+    for p in stt_mod.PROVIDERS:
+        ok = stt_mod.cloud_label(p) or stt_mod.backend_available(p)
+        VOICES_UI.append((p, stt_mod.provider_label(p)
+                          + ("" if ok else " — not installed")))
+    voice_cloud = stt_mod.cloud_label(cfg.voice_provider)
+    # Where did the LLM key come from? Only a key stored in config.toml is
+    # editable from the UI (an env key still shows, but is env's business).
+    doc = load_document(config_path())
+    key_from_file = bool(str(doc.get("llm", {}).get("api_key", "")).strip())
     # The backend cannot otherwise know which shell is hosting the UI.
     user_agent = (req.headers.get("user-agent", "") if req else "")
     shell_kind = "Electron desktop" if "Electron" in user_agent else "browser"
-    inner = f"""{page_head("Settings", "Everything here lives in config.toml on your machine.")}
+    inner = f"""{page_head("Settings", "Everything here lives in config.toml on your machine — saved straight from this page.")}
+<form id="settingsform" onsubmit="return saveSettings(event)">
 <section class="section"><div class="section-head">
 <h2 class="section-title"><span class="icon">{icon("sparkles", 16)}</span> AI provider</h2>
 <span class="chip {'pill-suggest' if up else 'pill-auto'}">{'healthy' if up else 'offline'}</span></div>
-<dl class="facts">
-<dt>Provider</dt><dd class="mono">{cfg.llm_provider}</dd>
-<dt>Endpoint</dt><dd class="mono">{cfg.llm_base_url}</dd>
-<dt>Generation</dt><dd class="mono">{cfg.generation_model}</dd>
-<dt>Retrieval</dt><dd>keyword + regex (no embeddings)</dd>
-<dt>Vision</dt><dd>{'on' if cfg.vision else 'off'}</dd>
+<dl class="facts facts-form">
+<dt>Provider</dt><dd>{dropdown("st-llm-provider", [(p, p) for p in PROVIDERS_UI], cfg.llm_provider)}</dd>
+<dt>Base URL</dt><dd><input name="st-llm-base_url" class="qbox" type="text"
+      value="{cfg.llm_base_url}" placeholder="http://localhost:11434/v1"
+      spellcheck="false" autocomplete="off">
+    <span class="muted">left alone when you pick a provider with a stock endpoint</span></dd>
+<dt>API key</dt><dd class="keyrow"><input id="st-llm-api_key" name="st-llm-api_key" class="qbox keyin" type="password"
+      placeholder="{'stored — type a new key to replace it' if key_from_file else 'paste a key (or leave empty and use CHARTA_API_KEY)'}"
+      autocomplete="off">{'<button type="button" class="btn tiny-btn" onclick="clearKey(this)">Clear</button>' if key_from_file else ''}</dd>
+<dt>Generation model</dt><dd><input name="st-llm-generation" class="qbox" type="text"
+      value="{cfg.generation_model}" spellcheck="false" autocomplete="off"></dd>
+<dt>Vision model</dt><dd><input name="st-llm-vision_model" class="qbox" type="text"
+      value="{cfg.vision_model}" placeholder="same as generation when empty"
+      spellcheck="false" autocomplete="off"></dd>
+<dt>Read images</dt><dd><label class="checkline"><input type="checkbox" name="st-llm-vision"
+      {'checked' if cfg.vision else ''}> use the vision model for scanned PDFs and screenshots</label></dd>
+<dt>Timeout · retries</dt><dd class="keyrow">
+    <input name="st-llm-timeout_seconds" class="qbox numin" type="number" min="5" max="600"
+           value="{cfg.llm_timeout}">s
+    <input name="st-llm-retries" class="qbox numin" type="number" min="0" max="5"
+           value="{cfg.llm_retries}">tries</dd>
 </dl>
 <div class="row" style="margin-top:var(--s4)"><button class="btn" onclick="location.reload()"><span class="icon">{icon("undo", 16)}</span> Check again</button>
 <a class="btn" href="/styleguide?folder={quote(folder)}">Design tokens</a></div>
-<p class="muted">Any OpenAI-compatible endpoint works: edit <code>[llm]</code> in <code>config.toml</code>.
-<code>charta doctor</code> prints the full report; the log is at <code>{applog.log_path(cfg)}</code>.</p></section>
+<p class="muted">Any OpenAI-compatible endpoint works: Ollama, LM Studio, llama.cpp, vLLM,
+OpenRouter, Groq… A cloud provider here is a deliberate choice — it is labelled at the top
+of the window. <code>charta doctor</code> prints the full report; the log is at <code>{applog.log_path(cfg)}</code>.</p></section>
 <section class="section"><div class="section-head">
-<h2 class="section-title"><span class="icon">{icon("mic", 16)}</span> Voice</h2></div>
-<dl class="facts">
-<dt>Speech to text</dt>
-<dd>
-  Whisper <span class="mono">{cfg.whisper_model}</span> · 
-  <span class="badge-sensitive" id="voice_provider_tag">({cfg.voice_provider})</span>
-</dd>
-<dt>ElevenLabs API key</dt>
-<dd><input type="text" id="elevenlabs_key" class="qbox"
-          value="{cfg.voice_api_key}" placeholder="sk-...">
-</dd>
-</dl></section>
+<h2 class="section-title"><span class="icon">{icon("mic", 16)}</span> Voice — speech to text</h2>
+<span class="chip" id="voice-cloudchip">{'cloud — audio leaves this device' if voice_cloud else 'on-device'}</span></div>
+<dl class="facts facts-form">
+<dt>Provider</dt><dd>{dropdown("st-voice-provider", VOICES_UI, cfg.voice_provider)}</dd>
+<dt>Whisper model</dt><dd><input name="st-voice-whisper_model" class="qbox" type="text"
+      value="{cfg.whisper_model}" placeholder="small" spellcheck="false" autocomplete="off"></dd>
+<dt>Moonshine model</dt><dd><input name="st-voice-stt_model" class="qbox" type="text"
+      value="{cfg.stt_model}" placeholder="moonshine-base-ONNX" spellcheck="false" autocomplete="off"></dd>
+<dt>ElevenLabs key</dt><dd class="keyrow"><input id="st-voice-api_key" name="st-voice-api_key" class="qbox keyin" type="password"
+      placeholder="{'stored — type a new key to replace it' if cfg.voice_api_key else 'needed only for the cloud provider'}"
+      autocomplete="off">{'<button type="button" class="btn tiny-btn" onclick="clearKey(this)">Clear</button>' if cfg.voice_api_key else ''}</dd>
+</dl>
+<p class="muted" id="voice-hint"><b>Ctrl+Space</b> anywhere in the app opens the voice popup: hold
+to speak, release to ask. In the desktop window it works even when Charta sits in the tray.
+Moonshine runs on a tiny local model (install: <code>pip install useful-moonshine-onnx</code>);
+System speech uses Windows' built-in engine; ElevenLabs is cloud and optional.</p></section>
+<div class="savebar"><button type="submit" class="btn solid"><span class="icon">{icon("check", 16)}</span> Save settings</button>
+<span class="muted">written to <code>{config_path()}</code> · git-ignored, machine-local</span></div>
+</form>
 <section class="section"><div class="section-head">
 <h2 class="section-title"><span class="icon">{icon("folders", 16)}</span> Folders</h2>
 <span class="chip">{len(watchlist.folders(cfg))} watched</span></div>
@@ -1514,43 +1556,195 @@ def api_chat(folder: str, id: str) -> JSONResponse:
 
 
 @app.post("/api/voice")
-async def api_voice(req: Request) -> JSONResponse:
-    """Process voice: accept audio + provider, return transcript."""
+async def api_voice(req: Request, provider: str = "",
+                    ext: str = "webm") -> JSONResponse:
+    """Speech-to-text over HTTP: raw audio bytes in, transcript out.
+
+    The browser records webm/ogg; local providers get a normalised PCM WAV
+    copy (see ``charta.voice.stt.as_wav``). The provider/key/model come from
+    config.toml — the client never sends secrets.
+    """
+    from ..voice import stt as stt_mod
+
+    body = await req.body()
+    if not body:
+        return JSONResponse({"error": "No audio reached the server."},
+                            status_code=400)
+    if len(body) > 25 * 1024 * 1024:
+        return JSONResponse({"error": "That recording is over 25 MB — "
+                                      "keep clips under a minute."},
+                            status_code=413)
+    cfg = _cfg()
+    use = provider.strip() or cfg.voice_provider
+    try:
+        use = stt_mod.normalize(use)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    # One whisper_name per provider; the moonshine field falls back to the
+    # whisper field only when it was never set.
+    model = cfg.stt_model or cfg.whisper_model if use == stt_mod.MOONSHINE \
+        else cfg.whisper_model
+    suffix = "." + str(ext or "webm").strip(".")
+    tmp = None
+    try:
+        import tempfile
+        tmp = pathlib.Path(tempfile.mktemp(prefix="charta-audio-", suffix=suffix))
+        tmp.write_bytes(body)
+    except OSError as e:
+        return JSONResponse({"error": f"Could not store the recording: {e}"},
+                            status_code=500)
+    try:
+        text = stt_mod.transcribe(tmp, provider=use, model=model,
+                                  api_key=cfg.voice_api_key)
+        return JSONResponse({"text": text, "provider": use,
+                             "cloud": stt_mod.cloud_label(use)})
+    except RuntimeError as e:  # friendly, user-facing (missing pkg, key…)
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:  # noqa: BLE001 - never leak a stack trace to the UI
+        applog.add(cfg, f"voice transcribe failed: {e}")
+        return JSONResponse(
+            {"error": "Speech-to-text failed unexpectedly. Check "
+                      "Settings → Voice for the health of each provider."},
+            status_code=500)
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
+
+
+@app.get("/api/settings")
+def api_settings_get() -> JSONResponse:
+    """The editable settings, read from config.toml (not env secrets)."""
+    from ..voice import stt as stt_mod
+    path = config_path()
+    doc = load_document(path)
+    llm = doc.get("llm", {})
+    voice = doc.get("voice", {})
+    app_cfg = _cfg()
+    env_key = (os.environ.get("CHARTA_API_KEY", "").strip()
+               or (os.environ.get("OPENAI_API_KEY", "").strip()
+                   if app_cfg.llm_provider in ("openai", "openrouter", "groq",
+                                               "together", "deepseek") else ""))
+    return JSONResponse({
+        "config_path": str(path),
+        "providers": sorted(PROVIDER_BASE_URLS) + ["custom"],
+        "base_urls": PROVIDER_BASE_URLS,
+        "llm": {
+            "provider": str(llm.get("provider", app_cfg.llm_provider)),
+            "base_url": str(llm.get("base_url", "")),
+            "api_key_set": bool(str(llm.get("api_key", "")).strip()) or bool(env_key),
+            "generation": (str(llm.get("generation", "")
+                               or doc.get("models", {}).get("generation", ""))
+                           or app_cfg.generation_model),
+            "vision_model": str(doc.get("models", {}).get("vision", "")),
+            "vision": bool(llm.get("vision", app_cfg.vision)),
+            "timeout_seconds": int(doc.get("models", {}).get("timeout_seconds",
+                                                             app_cfg.llm_timeout)),
+            "retries": int(doc.get("models", {}).get("retries",
+                                                     app_cfg.llm_retries)),
+        },
+        "voice": {
+            "provider": str(voice.get("provider", app_cfg.voice_provider)),
+            "whisper_model": str(voice.get("whisper_model",
+                                           app_cfg.whisper_model)),
+            "stt_model": str(voice.get("stt_model", app_cfg.stt_model)),
+            "api_key_set": bool(str(voice.get("api_key", "")).strip()),
+            "cloud": stt_mod.cloud_label(str(voice.get("provider", "local"))),
+            "backends": {p: stt_mod.backend_available(p)
+                         for p in stt_mod.PROVIDERS},
+        },
+    })
+
+
+@app.post("/api/settings")
+async def api_settings_post(req: Request) -> JSONResponse:
+    """Save what the Settings UI can edit: [llm], [models] and [voice].
+
+    Secrets: ``"api_key": null`` clears, an empty string keeps the current
+    value, a value writes it (into your machine's config.toml, git-ignored).
+    """
     body = await req.json()
-    audio_b64 = str(body.get("audio_base64", "")).strip()
-    provider = str(body.get("provider", "local")).strip()
-    api_key = str(body.get("api_key", "")).strip()
-    if not audio_b64 or not provider:
-        return JSONResponse({"error": "missing data"}, status_code=400)
+    path = config_path()
+    doc = load_document(path)
     try:
-        import base64
-        audio_bytes = base64.b64decode(audio_b64)
-    except Exception:
-        return JSONResponse({"error": "bad audio"}, status_code=400)
-    import tempfile, os
-    tmp = tempfile.mktemp(suffix=".wav")
-    with open(tmp, "wb") as f:
-        f.write(audio_bytes)
-    from charta.core.voice.stt import transcribe as _transcribe_local, transcribe_moonshine as _transcribe_moonshine, transcribe_elevenlabs as _transcribe_elevenlabs
+        llm = dict(body.get("llm") or {})
+        voice = dict(body.get("voice") or {})
+    except AttributeError:
+        return JSONResponse({"error": "Send llm/voice objects."},
+                            status_code=400)
+    models = dict(doc.get("models", {}))
+
+    if llm:
+        prov = str(llm.get("provider", "")).strip().lower()
+        if prov and prov not in PROVIDER_BASE_URLS and prov != "custom":
+            return JSONResponse({"error": f"Unknown AI provider {prov!r}."},
+                                status_code=400)
+        if prov:
+            prev = str(llm.get("provider", doc.get("llm", {}).get("provider", "")))
+            cur = str(doc.get("llm", {}).get("provider", prov))
+            doc["llm"] = {**(doc.get("llm") or {}), "provider": prov}
+            _maybe_reset_base_url(doc, cur, prov)
+        if "base_url" in llm:
+            url = str(llm.get("base_url") or "").strip()
+            if url and not url.startswith(("http://", "https://")):
+                return JSONResponse(
+                    {"error": "Base URL must start with http:// or https://."},
+                    status_code=400)
+            doc["llm"]["base_url"] = url
+        if "api_key" in llm:
+            _apply_secret(doc["llm"], llm.get("api_key"))
+        if "generation" in llm and str(llm.get("generation") or "").strip():
+            models["generation"] = str(llm["generation"]).strip()
+        if "vision_model" in llm:
+            models["vision"] = str(llm.get("vision_model") or "").strip()
+        if "vision" in llm:
+            doc["llm"]["vision"] = bool(llm.get("vision"))
+        if "timeout_seconds" in llm:
+            models["timeout_seconds"] = _int_or(llm.get("timeout_seconds"), 60, 5, 600)
+        if "retries" in llm:
+            models["retries"] = _int_or(llm.get("retries"), 1, 0, 5)
+        doc["models"] = models
+
+    if voice:
+        from ..voice import stt as stt_mod
+        vp = str(voice.get("provider", "")).strip().lower()
+        if vp:
+            try:
+                stt_mod.normalize(vp)
+            except ValueError:
+                return JSONResponse(
+                    {"error": f"Unknown speech provider {vp!r}."}, status_code=400)
+            doc["voice"] = {**(doc.get("voice") or {}), "provider": vp}
+        for field in ("whisper_model", "stt_model"):
+            if field in voice:
+                doc["voice"][field] = str(voice.get(field) or "").strip()
+        if "api_key" in voice:
+            _apply_secret(doc["voice"], voice.get("api_key"))
+
+    save_document(doc, path)
+    return JSONResponse({"saved": True, "path": str(path)})
+
+
+def _apply_secret(section: dict, value: object) -> None:
+    """null clears the stored key; '' keeps it; a value stores the new one."""
+    if value is None:
+        section["api_key"] = ""
+    elif str(value).strip():
+        section["api_key"] = str(value).strip()
+
+
+def _maybe_reset_base_url(doc: dict, old: str, new: str) -> None:
+    """Drop a stock base_url left over from the previous provider."""
+    known = {u.rstrip("/") for u in PROVIDER_BASE_URLS.values()}
+    cur = str(doc.get("llm", {}).get("base_url", "")).strip().rstrip("/")
+    if cur and cur in known and PROVIDER_BASE_URLS.get(old, "").rstrip("/") == cur:
+        doc["llm"]["base_url"] = ""
+
+
+def _int_or(value: object, default: int, lo: int, hi: int) -> int:
     try:
-        if provider == "moonshine":
-            text = _transcribe_moonshine(pathlib.Path(tmp))
-        elif provider == "elevenlabs":
-            if not api_key:
-                os.unlink(tmp)
-                return JSONResponse({"error": "api key needed"}, status_code=400)
-            text = _transcribe_elevenlabs(pathlib.Path(tmp), api_key)
-        else:
-            from faster_whisper import WhisperModel as _WM
-            m = _WM("small", device="cpu", compute_type="int8")
-            segments, _ = m.transcribe(tmp)
-            text = " ".join(s.text for s in segments).strip()
-        os.unlink(tmp)
-        return JSONResponse({"text": text, "provider": provider})
-    except Exception as e:
-        try: os.unlink(tmp)
-        except: pass
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return max(lo, min(hi, int(value)))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
 
 
 @app.post("/api/ask")

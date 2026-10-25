@@ -8,7 +8,7 @@ const saved=localStorage.getItem('charta-theme');
 if(saved)root.dataset.theme=saved;
 else if(matchMedia('(prefers-color-scheme: dark)').matches)root.dataset.theme='dark';
 const DESKTOP=!!(window.charta&&window.charta.desktop);
-if(DESKTOP&&window.charta.onVoiceToggle)window.charta.onVoiceToggle(()=>{if(window.openVoicePopup)window.openVoicePopup();});
+if(DESKTOP&&window.charta.onVoiceToggle)window.charta.onVoiceToggle(()=>window.voiceToggle&&window.voiceToggle());
 const DEBUG=!!window.__CHARTA_DEBUG__;
 
 // One icon language: the server ships the Lucide bodies, we wrap them here.
@@ -596,7 +596,7 @@ async function watchJob(job,work){
  return null;
 }
 function renderAnswer(j){
- if(window.showAnswerNotification)window.showAnswerNotification('Your answer is ready');
+ notifyAnswerReady();
  const log=document.getElementById('log');
  // Sources at the end: file icon, file name, page badge — one click opens
  // the file itself (falls back to showing it in the file manager).
@@ -806,99 +806,190 @@ try{const es=new EventSource('/api/events');es.onmessage=e=>{
 document.addEventListener('visibilitychange',()=>{
  if(!document.hidden&&DESKTOP&&window.charta.notify)window.charta.notify('ready');});
 
-// mic: Web Speech where available; the CLI/desktop uses local Whisper
-window.toggleMic=(taId)=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-const ta=document.getElementById(taId);if(!SR){toast('No browser speech engine here — local Whisper runs in the desktop/CLI.');return;}
-const r=new SR();r.onresult=ev=>{ta.value+=(ta.value?' ':'')+ev.results[0][0].transcript;};r.start();
-document.getElementById('micBtn')?.classList.add('rec');r.onend=()=>document.getElementById('micBtn')?.classList.remove('rec');};
 
-// --- Voice popup (Ctrl+Space) --------------------------------------------
-window.__voiceActive=false;
-window.openVoicePopup=async function(){
- if(window.__voiceActive)return;
- window.__voiceActive=true;
- const popup=document.createElement('div');
- popup.id='voice-popup';
- popup.style.position='fixed';
- popup.style.bottom='0';
- popup.style.left='0';
- popup.style.width='100%';
- popup.style.maxWidth='400px';
- popup.style.background='var(--surface)';
- popup.style.borderTop='1px solid var(--border)';
- popup.style.padding='var(--s3) var(--s4)';
- popup.style.color='var(--text)';
- popup.style.boxShadow='var(--sh3)';
- popup.style.zIndex='9999';
- popup.style.display='flex';
- popup.style.flexDirection='column';
- popup.style.gap='var(--s2)';
- const h=document.createElement('div');
- h.style.display='flex';
- h.style.justifyContent='space-between';
- h.style.alignItems='center';
- h.style.marginBottom='var(--s2)';
- const t=document.createElement('span');
- t.textContent='Voice input';
- const c=document.createElement('button');
- c.textContent='×';
- c.style.background='transparent';
- c.style.border='none';
- c.style.fontSize='1.2rem';
- c.onclick=function(){popup.remove();window.__voiceActive=false;};
- h.append(t,c);
- const mic=document.createElement('button');
- mic.type='button';
- mic.style='flex:1;min-height:80px;background:var(--raised);border:none;border-radius:var(--r-in);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:var(--fs-body);cursor:pointer;';
- mic.textContent='🎤 Hold to speak';
- mic.onmousedown=async function(){window.__voiceActive=false;try{await window.__sendVoice();}catch(e){toast('Voice error: '+e.message,false);}};
- const results=document.createElement('div');
- results.style.overflow='auto';
- results.style.flex='1';
- results.style.minHeight='120px';
- results.style.padding='var(--s2) 0';
- results.style.color='var(--muted)';
- results.innerHTML='<p>Waiting for input…</p>';
- const send=document.createElement('button');
- send.style.marginTop='var(--s2)';
- send.style.width='100%';
- send.style.padding='var(--s2) 0';
- send.textContent='Send';
- send.onclick=async function(){const txt=results.querySelector('p')?.textContent||'';if(txt){await window.__finishVoice(txt);}};
- popup.append(h,mic,results,send);
- document.body.append(popup);
- window.__voicePopup=popup;
+// ── Voice: provider speech-to-text (Moonshine / Whisper / ElevenLabs / system)
+// Ctrl+Space is push-to-talk: hold to record, release to transcribe and ask.
+// In the desktop shell Electron registers the combo globally (press to start,
+// press again to stop, works from the tray); in the browser it is the plain
+// keydown/keyup pair. All transcription goes through /api/voice, which uses
+// the provider chosen in Settings → Voice — the client never handles keys.
+const V={rec:null,chunks:[],stream:null,pop:null,recording:false,busy:false,
+ started:0,ta:null,mime:''};
+window.voiceCancel=async function(){
+ if(V.recording){V.recording=false;try{if(V.rec&&V.rec.state!=='inactive')V.rec.stop();}catch(_){}}
+ if(V.stream){V.stream.getTracks().forEach(t=>t.stop());V.stream=null;}
+ V.rec=null;V.chunks=[];V.busy=false;voiceClose();
 };
-window.__finishVoice=async function(text){if(window.__voicePopup){window.__voicePopup.remove();}window.__voiceActive=false;
- if(window.__onVoiceDone)window.__onVoiceDone(text);toast('Answer ready',true);};
-window.__sendVoice=async function(){const audio=await window.__recordAudio(3000);if(!audio)return toast('No audio captured',false);
- window.__voiceResult=audio;};
-
-// --- Ctrl+Space global hotkey --------------------------------------------
-document.addEventListener('keydown',function(e){if(e.key===' '&&e.ctrlKey){e.preventDefault();
- if(window.__voiceActive)return;window.openVoicePopup();}});
-
-// --- Answer ready notification -------------------------------------------
-window.__answerReady=false;
-window.showAnswerNotification=async function(message){
- message=message||'Your answer is ready';
- if(window.__answerReady)return;window.__answerReady=true;
- const notif=document.createElement('div');
- notif.style.position='fixed';
- notif.style.bottom='80px';
- notif.style.right='20px';
- notif.style.background='var(--accent1)';
- notif.style.color='var(--solid-fg)';
- notif.style.padding='var(--s3) var(--s4)';
- notif.style.borderRadius='var(--r-xs)';
- notif.style.zIndex='9999';
- notif.style.width='280px';
- notif.style.boxShadow='var(--sh3)';
- notif.textContent=message;
- document.body.append(notif);
- setTimeout(function(){notif.remove();window.__answerReady=false;},5000);
+window.voiceToggle=function(){
+ if(V.recording){voiceStop();}else{voiceStart();}return false;};
+window.voiceStart=async function(taId){
+ if(V.recording||V.busy)return;
+ V.ta=taId?document.getElementById(taId):null;
+ voicePopup();
+ if(window.Notification&&Notification.permission==='default'){try{Notification.requestPermission();}catch(_){}}
+ if(!navigator.mediaDevices||!window.MediaRecorder||!navigator.mediaDevices.getUserMedia){
+  vpStatus('err','This window cannot record audio');return;}
+ let stream;try{stream=await navigator.mediaDevices.getUserMedia({audio:true});}
+ catch(_e){vpStatus('err','Microphone blocked — allow mic access');setTimeout(voiceClose,1800);return;}
+ V.stream=stream;
+ V.mime=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg']
+  .find(m=>window.MediaRecorder.isTypeSupported&&window.MediaRecorder.isTypeSupported(m))||'';
+ try{V.rec=new MediaRecorder(stream,V.mime?{mimeType:V.mime}:undefined);}
+ catch(_e){V.mime='';V.rec=new MediaRecorder(stream);}
+ V.chunks=[];
+ V.rec.addEventListener('dataavailable',e=>{if(e.data&&e.data.size)V.chunks.push(e.data);});
+ V.rec.start();
+ V.recording=true;V.started=Date.now();
+ const orb=document.getElementById('vp-orb');if(orb)orb.classList.add('rec');
+ vpStatus('rec',DESKTOP?'Listening… press Ctrl+Space again to stop':'Listening… release to stop');
 };
+window.voiceStop=async function(){
+ if(!V.recording)return;
+ V.recording=false;V.busy=true;
+ const orb=document.getElementById('vp-orb');if(orb)orb.classList.remove('rec');
+ const rec=V.rec,stream=V.stream,mime=V.mime,chunks=V.chunks;
+ const stopped=new Promise(res=>{if(rec&&rec.state!=='inactive'){rec.addEventListener('stop',res,{once:true});rec.stop();}else res();});
+ await stopped;
+ if(stream){stream.getTracks().forEach(t=>t.stop());}
+ if(V.stream===stream)V.stream=null;
+ V.rec=null;V.chunks=[];
+ if(!chunks.length){V.busy=false;
+  if(Date.now()-V.started<400){vpStatus('err','Hold Ctrl+Space while you speak');setTimeout(voiceClose,1800);}
+  else{voiceClose();toast('No audio captured.',false);}
+  return;}
+ vpStatus('busy','Transcribing…');
+ const blob=new Blob(chunks,{type:(mime||'audio/webm').split(';')[0]});
+ const ext=mime.indexOf('ogg')>=0?'ogg':'webm';
+ let text='',err='';
+ try{
+  const r=await fetch('/api/voice?ext='+ext,{method:'POST',
+   headers:{'Content-Type':blob.type||'audio/webm'},body:blob});
+  const j=await r.json().catch(()=>({}));
+  if(r.ok&&j.text)text=String(j.text);else err=j.error||('Speech-to-text failed ('+r.status+')');
+ }catch(e){err=e.message||'Could not reach the server';}
+ V.busy=false;
+ if(err){voiceClose();toast(err,false);return;}
+ voiceDeliver(text);
+};
+// Where the transcript goes: the Ask composer (auto-sent for the tray flow)
+// or an explicit target textarea (dashboard boxes fill in place).
+window.voiceDeliver=function(text){
+ if(!text){voiceClose();toast('No speech detected in the clip.',false);return;}
+ voicePopup();vpStatus('text','“'+text+'”');
+ const probe=V.ta&&V.ta.classList&&V.ta.classList.contains('qbox')
+  &&V.ta.closest('.askwrap')?null:V.ta;
+ const composer=window.__voiceTarget(); // '#'q' or .composer textarea
+ const ta=probe||composer;
+ setTimeout(()=>{
+  voiceClose();
+  if(ta){
+   ta.value=text;
+   try{ta.dispatchEvent(new Event('input',{bubbles:true}));}catch(_e){}
+  }
+  if(window.askFolder&&(!V.ta||V.ta===composer)){ta&&ta.focus();window.__voiceAsked=true;window.askFolder(text);}
+  else{ta&&ta.focus();toast('Transcript placed — press Enter to send.');}
+ },420);
+};
+function voicePopup(){
+ if(V.pop)return V.pop;
+ const pop=document.createElement('div');pop.id='voicepop';pop.className='voicepop';
+ pop.setAttribute('role','dialog');pop.setAttribute('aria-live','polite');
+ pop.setAttribute('aria-label','Voice input');
+ pop.innerHTML=['<div class="vp-head"><span class="vp-title">Voice</span>',
+  '<button class="vp-x" type="button" aria-label="Cancel and close" onclick="voiceCancel()">×',
+  '</button></div>',
+  '<button class="vp-orb" id="vp-orb" type="button" onclick="voiceToggle()" aria-label="Start or stop recording">',
+  '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"',
+  ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">',
+  '<path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>',
+  '<path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/></svg></button>',
+  '<div class="vp-status" id="vp-status" data-state="idle">Listening…</div>',
+  '<div class="vp-text" id="vp-text"></div>'].join('');
+ document.body.append(pop);V.pop=pop;
+ pop.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();voiceCancel();}});
+ return pop;
+}
+function voiceClose(){
+ if(!V.pop){return;}
+ const p=V.pop;V.pop=null;
+ p.classList.add('gone');
+ p.addEventListener('animationend',()=>p.remove(),{once:true});
+}
+function vpStatus(kind,text){
+ const el=document.getElementById('vp-status');
+ if(el){el.dataset.state=kind;el.textContent=text;}
+ const orb=document.getElementById('vp-orb');
+ if(orb&&kind==='rec')orb.classList.add('rec');
+}
+// The old composer mic button now uses the same provider path (so Moonshine
+// works from the composer too) instead of the browser's Web Speech engine.
+window.toggleMic=(taId)=>{voiceStart(taId);return false;};
+// Old alias kept for the desktop bridge.
+window.openVoicePopup=()=>{window.voiceToggle();return false;};
+window.showAnswerNotification=(m)=>toast(m||'Your answer is ready');
+// Fires when the model's answer is fully rendered — toast in the window,
+// native notification when the window is hidden (browser) or via the
+// Electron tray (desktop shows a native Notification for this message).
+window.notifyAnswerReady=function(){
+ const viaVoice=!!window.__voiceAsked;      // asked by Ctrl+Space / mic
+ window.__voiceAsked=false;
+ if(!document.hidden&&!viaVoice)return;    // watching it stream — no noise
+ if(document.hidden&&window.Notification&&Notification.permission==='granted'){
+  try{const n=new Notification('Charta',{body:'Your answer is ready — click to open'});
+      n&&n.addEventListener('click',()=>window.focus());}catch(_e){}
+ }else toast('Your answer is ready');
+ if(DESKTOP&&window.charta&&window.charta.notify)try{window.charta.notify('Your answer is ready');}catch(_e){}
+};
+// In-window hotkey: true push-to-talk in the browser (hold = record). When
+// the desktop shell owns the combo globally, keydown never reaches us here.
+document.addEventListener('keydown',(e)=>{
+ if(!e.ctrlKey||e.code!=='Space')return;
+ e.preventDefault();
+ if(e.repeat||DESKTOP)return;
+ if(!V.recording&&!V.busy)voiceStart();
+},true);
+document.addEventListener('keyup',(e)=>{
+ if(!e.ctrlKey||e.code!=='Space')return;
+ e.preventDefault();
+ if(DESKTOP)return;
+ if(V.recording)voiceStop();
+},true);
 
+
+
+// ── Settings: save everything the user could otherwise edit in config.toml
+// Secrets: a Clear chip sends null (wipe the stored key); an empty box sends
+// "" (keep what's stored); a typed value sends itself. The server writes the
+// machine-local config.toml and the next request picks it up.
+window.clearKey=(btn)=>{
+ const row=btn.closest('.keyrow'),inp=row&&row.querySelector('input');
+ if(inp){inp.value='';inp.dataset.clear='1';inp.placeholder='key will be removed on save';}
+};
+window.saveSettings=async(ev)=>{
+ if(ev)ev.preventDefault();
+ const f=document.getElementById('settingsform');
+ if(!f)return false;
+ const val=n=>{const el=f.querySelector('[name=\"'+n+'\"]');return el?String(el.value):'';};
+ const num=n=>{const v=parseInt(val(n),10);return isNaN(v)?null:v;};
+ const key=n=>{const el=f.querySelector('[name=\"'+n+'\"]');return el?el:null;};
+ const llmKey=key('st-llm-api_key'),voiceKey=key('st-voice-api_key');
+ const body={llm:{provider:val('st-llm-provider'),
+   base_url:val('st-llm-base_url').trim(),
+   api_key:llmKey&&llmKey.dataset.clear==='1'?null:val('st-llm-api_key'),
+   generation:val('st-llm-generation').trim(),
+   vision_model:val('st-llm-vision_model').trim(),
+   vision:!!(f.querySelector('[name=\"st-llm-vision\"]')||{}).checked,
+   timeout_seconds:num('st-llm-timeout_seconds'),
+   retries:num('st-llm-retries')},
+  voice:{provider:val('st-voice-provider'),
+   whisper_model:val('st-voice-whisper_model').trim(),
+   stt_model:val('st-voice-stt_model').trim(),
+   api_key:voiceKey&&voiceKey.dataset.clear==='1'?null:val('st-voice-api_key')}};
+ try{await post('/api/settings',body);}
+ catch(e){return false;} // post() already toasts the reason
+ location.reload();
+ return false;
+};
 
 initDropdowns();
 window.loadOutput&&document.querySelector('.outcard')&&window.loadOutput();

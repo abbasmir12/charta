@@ -12,8 +12,10 @@ Environment overrides (handy for CI / CI secrets / one-off runs):
 """
 from __future__ import annotations
 
+import json
 import os
 import pathlib
+import shutil
 import sys
 from dataclasses import dataclass
 
@@ -36,7 +38,7 @@ PROVIDER_BASE_URLS: dict[str, str] = {
 }
 
 # Cloud providers: safe to pick up OPENAI_API_KEY from the environment.
-_CLOUD_PROVIDERS = {"openai", "openrouter", "groq", "together", "deepseek", "elevenlabs"}
+_CLOUD_PROVIDERS = {"openai", "openrouter", "groq", "together", "deepseek"}
 
 
 def default_state_dir() -> pathlib.Path:
@@ -69,6 +71,7 @@ class AppConfig:
     history: bool = True  # keep a private git history per watched folder
     voice_provider: str = "local"
     whisper_model: str = "small"
+    stt_model: str = ""  # moonshine model name when that provider is chosen
     voice_api_key: str = ""
 
     @classmethod
@@ -132,6 +135,9 @@ class AppConfig:
             and bool(app.get("history", True)),
             voice_provider=str(voice.get("provider", "local")),
             whisper_model=str(voice.get("whisper_model", "small")),
+            stt_model=str(voice.get("stt_model", "")),
+            voice_api_key=str(voice.get("api_key", "")).strip()
+            or os.environ.get("ELEVENLABS_API_KEY", "").strip(),
         )
 
     def state_path(self) -> pathlib.Path:
@@ -174,3 +180,57 @@ def config_candidates() -> list[pathlib.Path]:
 def config_files() -> list[pathlib.Path]:
     """The config file in use (a single file — Charta has exactly one)."""
     return [config_path()]
+
+
+# ── Writing config.toml (the Settings UI saves here) ─────────────────────
+
+
+def _toml_value(value: object) -> str:
+    """Render one scalar or list as TOML. Strings go out as basic strings."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml_value(v) for v in value) + "]"
+    return json.dumps(str(value))  # basic string, escapes \\ and quotes
+
+
+def toml_dumps(data: dict) -> str:
+    """Serialise a two-level dict to TOML (the shape config.toml uses)."""
+    lines: list[str] = []
+    for key, value in data.items():
+        if not isinstance(value, dict):
+            lines.append(f"{key} = {_toml_value(value)}")
+        else:
+            if lines:
+                lines.append("")
+            lines.append(f"[{key}]")
+            for sub, subval in value.items():
+                lines.append(f"{sub} = {_toml_value(subval)}")
+    return "\n".join(lines) + "\n"
+
+
+def load_document(path: pathlib.Path | None = None) -> dict:
+    """Read the raw config.toml dict (used to tell file values from env)."""
+    p = path or config_path()
+    if not p.exists():
+        return {}
+    with open(p, "rb") as f:
+        return tomllib.load(f)
+
+
+def save_document(data: dict, path: pathlib.Path | None = None) -> pathlib.Path:
+    """Write config.toml atomically, keeping a one-step .toml.bak beside it."""
+    p = path or config_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    body = toml_dumps(data).encode()
+    backup = p.with_suffix(".toml.bak")
+    if p.exists():
+        shutil.copyfile(p, backup)
+        tmp = p.with_suffix(".toml.new")
+        tmp.write_bytes(body)
+        tmp.replace(p)
+    else:
+        p.write_bytes(body)
+    return p

@@ -1,0 +1,153 @@
+---
+title: "Charta: right-click a folder and it files itself"
+published: false
+description: "A local AI folder you drop files into: it names them, files them, indexes what is inside, and answers questions with citations. Everything runs on a local Gemma model through Ollama. Built for the Hacktoberfest Open-Source AI Challenge Week 3."
+tags: devchallenge, hf26challenge
+cover_image: 
+---
+
+> **Hacktoberfest Open-Source AI Challenge, Week 3 — Slow and Steady.**
+>
+> [Demo video](https://youtu.be/Y1YP2tSMvu4) · [Source](https://github.com/abbasmir12/charta) · [How to run it](#code)
+
+> ### The thirty second version
+>
+> Right-click any folder in Windows Explorer → **Watch with Charta** → answer one question: *"what is this folder for?"*
+>
+> From then on you just drop files into it. Charta reads each one, renames it, files it into the right folder and subfolder, and writes down what is inside it.
+>
+> Later, when you ask *"how much did I spend since January?"*, it does not re-read your folder. It asks its own index — and answers with the amount, the file, and the page.
+
+## What I Built
+
+Charta is a **magic folder**. Any folder on your machine — `D:\Freelance`, `C:\Users\me\Desktop\paperwork`, a student's `Lectures` — can become an intelligent folder. You point at it in Explorer, choose **Watch with Charta**, and give it a purpose in one sentence, typed or spoken. A local Gemma model turns that sentence into a **Folder Charter**: a plain Markdown file, stored inside the folder itself.
+
+```
+D:\Freelance\
+  .charta\
+    charter.md      <- the folder's purpose, human-editable
+    journal.jsonl   <- every move, undoable
+    index.db        <- what each file contains
+  Invoices\
+    2026-03-edf-electricity.pdf
+    2026-04-orange-internet.pdf
+  Rent\
+    2026-04-receipt.pdf
+```
+
+After that, the folder runs a loop on its own:
+
+> 1. **A file lands.** You drag an invoice, a lecture, a scan, a spreadsheet into the folder.
+> 2. **Charta waits until it is fully written**, then reads it — PDF text, DOCX, XLSX, images through the model's vision.
+> 3. **It proposes a name and a place** based on the charter: `new_document(2).pdf` → `Electricity/2026-04-edf-electricity.pdf`. Nothing moves until you approve it — default mode is *suggest*, so the folder does the thinking and you keep the authority.
+> 4. **On approval it moves and renames** — never deletes, never overwrites, always with a numeric suffix on collision and an entry in the undo journal.
+> 5. **It writes down what is inside** — document type, vendor, date, amount, tags, and the text itself. That is the index.
+
+Then the payoff part. Ask the folder a question:
+
+> **You:** how much did I spend on electricity this year?
+>
+> **Charta:** €322.00 across four EDF bills — January (€79.40), February (€71.20), April (€82.50), May (€88.90).
+>
+> *Sources: the four EDF bills in `Electricity/`, each with its page number.*
+>
+> And it notices what is **not** there: *"there is no electricity bill for March — the folder expects one per month."*
+
+That last line is the feature I did not plan and now use most. A folder that knows what it is *supposed* to contain can tell you what is missing.
+
+## Demo
+
+{% embed https://www.youtube.com/watch?v=Y1YP2tSMvu4 %}
+
+Direct link: **https://youtu.be/Y1YP2tSMvu4**
+
+What to watch for:
+
+> - A messy folder, everything flat at the root, no subfolders at all.
+> - Right-click → **Watch with Charta** → the charter written in one sentence.
+> - The scan proposes an Invoices / Rent / Insurance tree, renames included — and moves nothing until you approve.
+> - The purpose output: a receipts spreadsheet, built from the same index.
+> - Ask: a question answered with amounts and a citation to the exact file and page.
+
+## Code
+
+{% embed https://github.com/abbasmir12/charta %}
+
+```bash
+git clone https://github.com/abbasmir12/charta
+cd charta
+pip install -e .
+charta open .          # native window on Windows; `charta serve` anywhere
+```
+
+> No API keys, no account, no sign-up. The default provider is Ollama on `localhost` with a local Gemma model. `charta demo` builds a messy sample folder, charters it, proposes, approves and writes the output — fully offline, no model required, so you can see the whole loop in one command.
+
+## How I Built It
+
+Open source AI is the engine here, not a badge stuck on the side.
+
+> **The model.** Gemma, served locally by Ollama through the standard OpenAI-compatible HTTP API. Nothing is hard-coded: provider, base URL, key and model names live in one `config.toml` owned by the machine and git-ignored, so a `git pull` can never undo your settings. Ollama, LM Studio, llama.cpp, vLLM, OpenAI, OpenRouter, Groq, Together and DeepSeek all work, because there is exactly **one** HTTP client in the codebase.
+>
+> **The agent.** Ask is a real agent, not one big prompt. Charta hands the model a catalogue of the index plus three tools — `search_index`, `read_file`, `list_files` — and runs whatever it asks for. The model answers from what it actually found, and the files it read become the citations. Every tool call is visible in the UI as it happens.
+>
+> **The memory.** A file the user owns: `.charta/charter.md` (Markdown + YAML front-matter), `.charta/journal.jsonl` for undo, and a folder-local SQLite index for what each file contains. No vector database, no embeddings. Retrieval is keyword/BM25 plus regex for dates, months, amounts and document types, with a short description per file. Fast, deterministic, explainable — and it runs on a 4B model without a GPU budget.
+>
+> **The reading.** PyMuPDF for PDF text, Gemma vision for scanned pages and photos, RapidOCR as fallback, `openpyxl` for spreadsheets and a stdlib DOCX reader. One `extract` interface hides all of it.
+>
+> **The voice.** Push-to-talk on Ctrl+Space — a global toggle inside the desktop shell, even from the tray. Local Whisper by default, system speech as fallback, ElevenLabs as a clearly labelled cloud opt-in. Transcripts land in the composer and send themselves.
+>
+> **The window.** FastAPI serving plain HTML, CSS and vanilla JS. No bundler, no CDN, fonts and icons bundled locally. The Electron shell in `desktop/` wraps the same UI with a tray and hardened defaults; the UI still works in a browser without it.
+>
+> **The safety.** Suggest by default. Never delete, only move or copy. Every move journalled and undoable in one click. Protected paths (Windows, Program Files, AppData, drive and profile roots) refused with a friendly screen instead of an error dump. Sensitive content — ID numbers, card numbers, IBANs, passwords — detected, kept out of the index, and the file flagged in the proposals.
+
+**Sentry Agent Tracing** is the piece I am proudest of, because it should not have worked. Charta's HTTP client is hand-written, so Sentry's auto-instrumentation (which monkey-patches the `openai` package) would never fire. I instrumented the loop by hand instead:
+
+> - `gen_ai.invoke_agent` — `invoke_agent charta-ask`, wrapped around the whole run.
+> - `gen_ai.chat` — `chat {model}`, at the single choke point every model call passes through, carrying token counts, finish reasons and the response model.
+> - `gen_ai.execute_tool` — `execute_tool {tool}` with arguments, result and error status.
+> - The folder's chat id becomes the Sentry conversation id, so multi-turn chats group together.
+> - The agent runs in a detached context, so its trace is a root transaction instead of a child of `POST /api/ask` — which is what actually makes it show up in the transaction list.
+> - Opt-in to the point of invisibility: no DSN means every helper is a silent no-op, and prompts and answers stay on disk unless `record_inputs`/`record_outputs` are explicitly flipped.
+
+## Why Does Open Innovation Matter?
+
+Because the folder I am describing is the one folder you can never upload.
+
+Rent contracts, bank statements, meter readings, insurance policies, a scan of an ID card. That is the folder where privacy is not a preference — it is the entire point. A closed API could read it perfectly well. But the moment you paste a rent contract into a chat box, that contract leaves your machine forever and you have no way to know who reads it next.
+
+> Open weights running locally change the arithmetic completely.
+>
+> The model reading my invoices is a Gemma model sitting on my own laptop. It works with no internet, costs nothing per question, and sends nothing anywhere. The only network call Charta makes is to the LLM endpoint the user configured — and to Sentry only if they paste their own DSN into their own config.
+>
+> The AI's memory is a file I can open in Notepad. If I dislike how it organised something, I edit the charter and it behaves differently tomorrow. No fine-tuning pipeline, no vendor, no monthly bill, no terms of service to trust.
+
+That is what open innovation made possible: an assistant for the most private folder on your computer that a stranger can reproduce on a laptop with no internet and no money.
+
+## My Agent Session
+
+The build was driven almost entirely through an AI coding agent, in waves. Each wave shipped as one commit with tests, and `STATUS.md` in the repo is the append-only log of decisions, failures and lessons — including the ugly ones:
+
+> - A voice popup that called `window.__recordAudio`, a function that never existed.
+> - A fake ElevenLabs endpoint that returned a hard-coded string.
+> - A sidebar that showed only two entries on first launch, because every folder page silently hid itself before a folder was picked.
+> - A model tag that was not actually offered by the provider, showing up as a 404 in the Sentry trace.
+> - An "ask" box reading a job object as if it were an answer, printing "No answer." in under a second.
+
+Reading that log is the closest thing to a real session transcript: what broke, what I believed, and what the fix actually turned out to be.
+
+## The Lazy Payoff
+
+Real numbers from a week of using it on my own invoice folder:
+
+> - Sorting a batch of ten invoices: **~15 minutes** of dragging, renaming and guessing → **one scan, one approve click, under a minute.**
+> - Finding one specific invoice: "open five files and hope" → one question, answer with file and page.
+> - The gap detector caught a **missing March electricity bill** I had not noticed for two weeks.
+> - The purpose output wrote the receipts spreadsheet I actually had to deliver.
+
+The honest caveat: the **first** run is not lazy at all. You charter the folder, you scan it, you review the proposals. That is the Slow and Steady bargain — front-load the boring thinking so every day after it is one drag and one click. Worth it.
+
+## Prize Categories
+
+> - **Gemma — Best Use of Gemma** *(primary)*. Gemma is the model that reads, classifies, names and answers. It runs locally through Ollama: no key, no cloud, no per-token bill.
+> - **ElevenLabs — Best Use of ElevenLabs** *(secondary)*. Voice charter creation and push-to-talk questions, with ElevenLabs speech-to-text as the opt-in cloud option beside local Whisper.
+> - **Sentry — Best Use of Sentry Agent Tracing**. Manual `gen_ai.invoke_agent` / `gen_ai.chat` / `gen_ai.execute_tool` instrumentation of a hand-written client, token and latency attributes, conversations grouped by chat id, and prompts kept off the wire by default.

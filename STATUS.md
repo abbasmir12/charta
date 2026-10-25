@@ -48,6 +48,17 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-25: **DEVPOST.md rewritten for submission.** Real demo video
+  (`https://youtu.be/Y1YP2tSMvu4`) and repository
+  (`github.com/abbasmir12/charta`) links replace the placeholders; the post
+  now leads with the right-click → drag-drop → auto-file/rename → index →
+  ask-the-index story, quotes the sample folder's real EDF figures
+  (79.40 + 71.20 + 82.50 + 88.90 = 322.00, March missing on purpose), and
+  uses a blockquote/nested-quote layout for the summary, the file loop, the
+  example answer, stack bullets, Sentry spans and prize categories. Files:
+  `DEVPOST.md`. Verified: docs only — link and number check against
+  `tools/make_flat.py`; no code touched.
+
 - 2026-10-25: **A messy real-world sample folder for the demo.** New
   `tools/make_flat.py` generates 27 files into `samples/flat-paperwork/`
   (flat at the root, so the agent has real organizing to do): EDF electricity

@@ -1,7 +1,7 @@
 ---
 title: "Charta: right-click a folder and it files itself"
 published: false
-description: "A local AI folder you drop files into: it names them, files them, indexes what is inside, and answers questions with citations. Everything runs on a local Gemma model through Ollama. Built for the Hacktoberfest Open-Source AI Challenge Week 3."
+description: "A local-first AI folder: right-click any folder in Windows, and the files you drop in get renamed, filed into the right subfolder and indexed — so questions are answered from that index, with citations. Runs on Gemma via Ollama, or any OpenAI-compatible provider, local or cloud. Built for the Hacktoberfest Open-Source AI Challenge Week 3."
 tags: devchallenge, hf26challenge
 cover_image: 
 ---
@@ -95,15 +95,7 @@ That last line is the feature I did not plan and now use most. A folder that kno
 
 {% embed https://www.youtube.com/watch?v=Y1YP2tSMvu4 %}
 
-Direct link: **https://youtu.be/Y1YP2tSMvu4**
-
-What to watch for:
-
-> - A messy folder, everything flat at the root, no subfolders at all.
-> - Right-click → **Watch with Charta** → the charter written in one sentence.
-> - The scan proposes an Invoices / Rent / Insurance tree, renames included — and moves nothing until you approve.
-> - The purpose output: a receipts spreadsheet, built from the same index.
-> - Ask: a question answered with amounts and a citation to the exact file and page.
+> This demo shows a folder being watched with Charta — and how intelligent that makes it. I drop a pile of different invoices into it, and Charta creates an **Invoices** folder, moves every invoice in there, renames them, and indexes each one. From that moment the folder can answer questions about them.
 
 ## Code
 
@@ -116,13 +108,15 @@ pip install -e .
 charta open .          # native window on Windows; `charta serve` anywhere
 ```
 
-> No API keys, no account, no sign-up. The default provider is Ollama on `localhost` with a local Gemma model. `charta demo` builds a messy sample folder, charters it, proposes, approves and writes the output — fully offline, no model required, so you can see the whole loop in one command.
+> No account and no sign-up. The default provider is Ollama on `localhost` with a local Gemma model, but Charta speaks the **OpenAI-compatible API**, so any provider works — local ones like Ollama, LM Studio, llama.cpp or vLLM, or hosted ones like OpenRouter, Groq, Together, DeepSeek or OpenAI. Change `[llm]` in `config.toml` and that is the whole migration.
+>
+> `charta demo` builds a messy sample folder, charters it, proposes, approves and writes the output — fully offline, no model required, so you can see the whole loop in one command.
 
 ## How I Built It
 
 Open source AI is the engine here, not a badge stuck on the side.
 
-> **The model.** Gemma, served locally by Ollama through the standard OpenAI-compatible HTTP API. Nothing is hard-coded: provider, base URL, key and model names live in one `config.toml` owned by the machine and git-ignored, so a `git pull` can never undo your settings. Ollama, LM Studio, llama.cpp, vLLM, OpenAI, OpenRouter, Groq, Together and DeepSeek all work, because there is exactly **one** HTTP client in the codebase.
+> **The model — any provider you want, because it is OpenAI-compatible.** Charta has exactly one HTTP client, and it speaks the standard OpenAI-compatible API. Out of the box that means a local Gemma model through Ollama, but it is the same client pointed at LM Studio, llama.cpp or vLLM locally, or at OpenRouter, Groq, Together, DeepSeek or OpenAI in the cloud. Nothing is hard-coded: provider, base URL, key and model names live in one git-ignored `config.toml` owned by the machine (or in the Settings page), so `git pull` can never undo your choice, and swapping providers is an edit, not a rewrite.
 >
 > **The agent.** Ask is a real agent, not one big prompt. Charta hands the model a catalogue of the index plus three tools — `search_index`, `read_file`, `list_files` — and runs whatever it asks for. The model answers from what it actually found, and the files it read become the citations. Every tool call is visible in the UI as it happens.
 >
@@ -158,18 +152,6 @@ Rent contracts, bank statements, meter readings, insurance policies, a scan of a
 > The AI's memory is a file I can open in Notepad. If I dislike how it organised something, I edit the charter and it behaves differently tomorrow. No fine-tuning pipeline, no vendor, no monthly bill, no terms of service to trust.
 
 That is what open innovation made possible: an assistant for the most private folder on your computer that a stranger can reproduce on a laptop with no internet and no money.
-
-## My Agent Session
-
-The build was driven almost entirely through an AI coding agent, in waves. Each wave shipped as one commit with tests, and `STATUS.md` in the repo is the append-only log of decisions, failures and lessons — including the ugly ones:
-
-> - A voice popup that called `window.__recordAudio`, a function that never existed.
-> - A fake ElevenLabs endpoint that returned a hard-coded string.
-> - A sidebar that showed only two entries on first launch, because every folder page silently hid itself before a folder was picked.
-> - A model tag that was not actually offered by the provider, showing up as a 404 in the Sentry trace.
-> - An "ask" box reading a job object as if it were an answer, printing "No answer." in under a second.
-
-Reading that log is the closest thing to a real session transcript: what broke, what I believed, and what the fix actually turned out to be.
 
 ## The Lazy Payoff
 

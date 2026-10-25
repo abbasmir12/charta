@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import datetime
 import json
 import os
@@ -1921,7 +1922,8 @@ def _run_ask(job: Job, folder: str, question: str,
         history = chats.history_for(folder, chat_id)
         if history:
             job.step("work", f"Continuing the conversation ({len(history) // 2} earlier turn(s)).")
-        agent = ask_with_tools(question, folder, client, steps=steps, history=history)
+        agent = contextvars.Context().run(
+            ask_with_tools, question, folder, client, steps=steps, history=history)
         for s in steps:
             job.step(s["kind"], s["text"])
         # The answer arrives in the strict blocks protocol; organisation

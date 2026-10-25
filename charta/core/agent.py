@@ -29,6 +29,7 @@ from typing import Literal
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from . import index_db
+from . import observability as obs
 from .ask import Citation, chunk_text
 from .classify import Proposal
 from .llm import LLMClient
@@ -194,6 +195,14 @@ def _json_action(text: str) -> tuple[str, dict] | None:
     return None
 
 
+def _tool_description(name: str) -> str:
+    """The catalogue text for one tool (goes on the trace, not to the model)."""
+    for spec in TOOL_SPECS:
+        if spec["name"] == name:
+            return spec["description"]
+    return ""
+
+
 def run_tool(name: str, args: dict, folder: str | pathlib.Path) -> str:
     """Run one tool and return what it found (as text for the model)."""
     if name == "search_index":
@@ -243,6 +252,8 @@ def ask_with_tools(question: str, folder: str | pathlib.Path, client: LLMClient,
     model that remembers the exchange before. A fresh question has none.
     Falls back to a plain answer when the model does not call any tool.
     """
+    run_span = obs.agent_run(question)  # no-op unless Sentry is configured
+
     def note(kind: str, text: str) -> None:
         if steps is not None:
             steps.append({"kind": kind, "text": text})
@@ -298,7 +309,9 @@ def ask_with_tools(question: str, folder: str | pathlib.Path, client: LLMClient,
             break
         name, args = action
         note("tool", f"Calling {name}({', '.join(f'{k}={v!r}' for k, v in args.items())})")
+        tool_span = obs.tool_call(name, args, description=_tool_description(name))
         result = run_tool(name, args, folder)
+        obs.finish_tool(tool_span, result, ok=not result.startswith("Unknown tool"))
         call = ToolCall(name=name, args=args, result=result)
         calls.append(call)
         used_tools = True
@@ -334,6 +347,7 @@ def ask_with_tools(question: str, folder: str | pathlib.Path, client: LLMClient,
         result.raw = answer
         result.answer, result.blocks, _, _ = structured_answer(answer)
         result.citations = _citations(folder, used_files)
+    obs.finish_agent(run_span, blocks_to_text(result.blocks) or result.answer)
     return result
 
 

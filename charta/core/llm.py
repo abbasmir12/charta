@@ -24,6 +24,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Sequence
 
+from . import observability as obs
 from .config import AppConfig
 
 VISION_PROMPT = (
@@ -131,13 +132,18 @@ class LLMClient:
         if system:
             payload_messages.append({"role": "system", "content": system})
         payload_messages.extend(messages)
-        payload = {"model": model or self.cfg.generation_model,
+        chosen = model or self.cfg.generation_model
+        span = obs.model_call(chosen, provider=self.cfg.llm_provider,
+                              messages=payload_messages)
+        payload = {"model": chosen,
                    "messages": payload_messages, "stream": False}
         try:
             resp = self._request("POST", "/chat/completions", payload, timeout)
         except RuntimeError as e:
+            obs.finish_model(span, {}, chosen, ok=False)
             return LLMResult(ok=False, error=str(e))
         text = self._first_message(resp)
+        obs.finish_model(span, resp, chosen, text=text or "", ok=bool(text))
         return LLMResult(ok=bool(text), text=text)
 
     def generate(self, prompt: str, system: str = "", json_mode: bool = False,

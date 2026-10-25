@@ -48,6 +48,28 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-25: **Sentry Agent Tracing wired in — opt-in, no-op by default.**
+  A new `charta/core/observability.py` wraps the ask agent's work in the
+  spans Agent Tracing understands: `gen_ai.invoke_agent` ("invoke_agent
+  charta-ask") around `ask_with_tools`, `gen_ai.chat` ("chat {model}") at
+  the single choke point `LLMClient` (chat/generate/describe_image —
+  response model, id, finish reasons, prompt/completion/total tokens,
+  cache-read), and `gen_ai.execute_tool` ("execute_tool {tool}") with
+  arguments, result and error status around every tool run. `_run_ask`
+  attaches the folder's chat id via `set_conversation_id` so traces group
+  into Conversations. Config: new `[observability]` ("sentry_dsn",
+  "record_inputs"/"record_outputs" — prompts and answers stay local unless
+  the user flips them — "sample_rate") with a `CHARTA_SENTRY_DSN` env
+  fallback; `sentry-sdk>=2.60` is an optional extra (`pip install -e
+  ".[sentry]"`); init happens in the FastAPI lifespan, shutdown flushes.
+  Without a DSN or the SDK every helper is a silent no-op — 10 new tests
+  cover both states (fake-SDK span-shape asserts + no-op safety + a full
+  ask run under a fake client). Files: `charta/core/{observability,llm,
+  agent,config}.py`, `charta/web/app.py`, `pyproject.toml`,
+  `config.toml.example`, `tests/test_observability.py`.
+  Verified: `pytest -q` 287 passed; `tools/ui_check.py` 36 screens clean.
+  Commit: 5168b98
+
 - 2026-10-25: **the rail is complete from the very first launch.** The nav
   used to skip every folder-dependent page (Overview/Files/Review/Outputs/
   Gaps/Ask/Activity/History) whenever the URL carried no `folder=` param, so
@@ -621,20 +643,25 @@ pass and a recorded before/after demo.
 
 ## In Progress
 
-- Windows verification of this wave on a real machine: the global Ctrl+Space
-  from the tray, Moonshine against the model the user downloaded, and the
-  settings round-trip on real config.toml (`git pull; charta stop; charta open .`).
+- Hacktoberfest Week 3 submission (due today, Oct 25): the Sentry integration
+  is in; the remaining work is (user) configuring a Sentry DSN in
+  `[observability]` of config.toml and running one real ask (`charta demo
+  --ai` or a normal ask) so the Agents/Conversations views can be
+  screenshotted, then drafting and publishing the DEV post (tags
+  `#devchallenge` `#hf26challenge`).
 
 ## Next Up
 
-1. (user) Try the voice wave on Windows: Ctrl+Space from the tray, Moonshine
-   transcription, the editable Settings page, and the answer-ready
-   notification.
-2. (user) Try the new Ask on Windows: the chat strip, continuing a
-   conversation, follow-up memory, and opening a source chip.
-3. Windows visual pass: Explorer menu, tray, Mica/title bar, close-to-tray,
-   then a recorded 60–90s before/after demo (`charta demo` → sorted folder +
-   output).
+1. (user) Configure Sentry on your side: create/choose a project, put its DSN
+   in `config.toml` `[observability] sentry_dsn`, optionally
+   `pip install -e ".[sentry]"`, run one real ask, then check
+   Explore → Traces/Agents for the `invoke_agent charta-ask` trace.
+2. Draft + publish the DEV submission post: Gemma-led (local core), the voice
+   wave story (ElevenLabs opt-in), the Sentry tracing section (include the
+   trace screenshot), theme angle: the folder files itself, user stays lazy
+   and in control.
+3. (user) Windows verification wave continues: Ctrl+Space from the tray,
+   Moonshine, Settings round-trip, answer-ready notification.
 
 ## Blockers & Open Questions
 
@@ -650,6 +677,17 @@ pass and a recorded before/after demo.
 
 ## Decisions
 
+- 2026-10-25: Sentry tracing is manual instrumentation, not a second LLM
+  integration, and it is opt-in to the point of invisibility. Why: Charta's
+  LLMClient speaks OpenAI-compatible HTTP by hand, so `sentry-sdk`'s
+  auto-instrumentation (which monkey-patches the `openai` package) would
+  never fire — the spans are emitted at the two places every call provably
+  passes (`LLMClient` for `gen_ai.chat`, the tool loop in
+  `agent.ask_with_tools` for `invoke_agent`/`execute_tool`). Privacy-wise
+  it mirrors the AGENTS telemetry rule: nothing leaves the machine without
+  an explicit DSN in the user's own config.toml, and even then only
+  timings/tokens/tool names — question and answer text requires a second
+  explicit flip of `record_inputs`/`record_outputs`.
 - 2026-10-25: the Settings UI writes the user's `config.toml` directly
   (atomic write, one `.toml.bak` backup) instead of a shadow override file.
   Why: AGENTS says one config file, and a second layer would make the

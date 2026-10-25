@@ -9,6 +9,9 @@ dependencies = ["fastapi", "uvicorn", "watchdog", "openpyxl", "pydantic"]
 # Native window (dark title bar, Mica, taskbar icon). Without it `charta open`
 # falls back to your browser. Install with: pip install -e ".[native]"
 native = ["pywebview>=4.0"]
+# Opt-in Sentry Agent Tracing ([observability] in config.toml; without it
+# Charta sends nothing anywhere). Install with: pip install -e ".[sentry]"
+sentry = ["sentry-sdk>=2.60"]
 [project.scripts]
 charta = "charta.cli:main"
 [tool.setuptools.packages.find]

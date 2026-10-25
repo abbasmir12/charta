@@ -9,6 +9,7 @@ Environment overrides (handy for CI / CI secrets / one-off runs):
     CHARTA_API_KEY     -> [llm] api_key (the file wins; this is the fallback)
     CHARTA_MODEL       -> [models] generation
     CHARTA_CONFIG      -> the config.toml to read
+    CHARTA_SENTRY_DSN  -> [observability] sentry_dsn (opt-in agent tracing)
 """
 from __future__ import annotations
 
@@ -73,6 +74,11 @@ class AppConfig:
     whisper_model: str = "small"
     stt_model: str = ""  # moonshine model name when that provider is chosen
     voice_api_key: str = ""
+    # [observability] — optional, explicit opt-in Sentry Agent Tracing
+    sentry_dsn: str = ""
+    sentry_record_inputs: bool = False  # send the question text to your Sentry
+    sentry_record_outputs: bool = False  # send the answer text to your Sentry
+    sentry_sample_rate: float = 1.0
 
     @classmethod
     def load(cls, path: pathlib.Path | None = None) -> "AppConfig":
@@ -87,6 +93,7 @@ class AppConfig:
         watcher = data.get("watcher", {})
         safety = data.get("safety", {})
         voice = data.get("voice", {})
+        observability = data.get("observability", {})
 
         provider = str(llm.get("provider", "ollama")).lower()
         env_url = os.environ.get("CHARTA_BASE_URL", "")
@@ -138,6 +145,11 @@ class AppConfig:
             stt_model=str(voice.get("stt_model", "")),
             voice_api_key=str(voice.get("api_key", "")).strip()
             or os.environ.get("ELEVENLABS_API_KEY", "").strip(),
+            sentry_dsn=str(observability.get("sentry_dsn", "")).strip()
+            or os.environ.get("CHARTA_SENTRY_DSN", "").strip(),
+            sentry_record_inputs=bool(observability.get("record_inputs", False)),
+            sentry_record_outputs=bool(observability.get("record_outputs", False)),
+            sentry_sample_rate=float(observability.get("sample_rate", 1.0)),
         )
 
     def state_path(self) -> pathlib.Path:

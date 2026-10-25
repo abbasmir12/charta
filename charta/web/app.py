@@ -55,6 +55,9 @@ ICON = ASSETS / "charta.ico"
 @asynccontextmanager
 async def _lifespan(_app: FastAPI) -> Any:
     """Resume watching every remembered folder (survives closing to the tray)."""
+    # Opt-in Sentry Agent Tracing: on only when [observability] carries a DSN.
+    from charta.core import observability as obs
+    obs.init(_cfg())
     try:
         _resume_watching()
     except Exception:  # noqa: BLE001 - a bad watchlist must not stop the UI
@@ -62,6 +65,7 @@ async def _lifespan(_app: FastAPI) -> Any:
     try:
         yield
     finally:
+        obs.shutdown()
         _stop_daemon()
 
 
@@ -1879,6 +1883,9 @@ def _run_ask(job: Job, folder: str, question: str,
     """Do the work, recording every step so the UI can show it."""
     cfg = _cfg()
     client = LLMClient(cfg)
+    from charta.core import observability as obs
+    if chat_id:
+        obs.set_conversation(chat_id)  # the trace joins the folder's chat
     try:
         idx, cached, stats = _ask_index(folder, cfg, client)
         source = stats.get("source", "index")
@@ -1974,6 +1981,8 @@ def _run_ask(job: Job, folder: str, question: str,
             asklog.info("  [%s] %s", step["kind"], step["text"])
         if job.error:
             asklog.warning("  error: %s", job.error)
+        if chat_id:
+            obs.clear_conversation()
 
 
 # The Ask index per folder, rebuilt only when the folder's files change. The

@@ -51,3 +51,20 @@ exclude_sensitive_from_index = true
 [voice]
 provider = "local"
 whisper_model = "small"
+
+# ---- Optional: Sentry Agent Tracing (explicit opt-in) --------------------
+# Charta sends nothing to anyone until you ask it to. If you keep a Sentry
+# project and want to see how the ask agent works — every model call and tool
+# call as a trace with latency, token usage and failures — install the optional
+# SDK (`pip install sentry-sdk`) and paste your project's DSN here.
+#   * Nothing is sent while sentry_dsn is blank (the default, respected).
+#   * Prompts and answers are still NOT collected: only model/tool names,
+#     timings and token counts. Flip record_inputs / record_outputs to true
+#     only if your own privacy budget allows sending question/answer text.
+#   * Self-hosted Sentry: also set stream_gen_ai_spans = false at init time.
+# Requires sentry-sdk >= 2.60 for the AI monitoring views.
+[observability]
+sentry_dsn = ""
+record_inputs = false
+record_outputs = false
+sample_rate = 1.0

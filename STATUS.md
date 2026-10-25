@@ -68,7 +68,7 @@ pass and a recorded before/after demo.
   agent,config}.py`, `charta/web/app.py`, `pyproject.toml`,
   `config.toml.example`, `tests/test_observability.py`.
   Verified: `pytest -q` 287 passed; `tools/ui_check.py` 36 screens clean.
-  Commit: 5168b98
+  Commit: b447a68
 
 - 2026-10-25: **the rail is complete from the very first launch.** The nav
   used to skip every folder-dependent page (Overview/Files/Review/Outputs/

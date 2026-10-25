@@ -120,10 +120,10 @@ class Span:
     def set(self, key: str, value: object) -> "Span":
         if self.inner is not None:
             try:
-                self.inner.set_attribute(key, value)
-            except Exception:  # noqa: BLE001 — older SDK: set_data instead
+                self.inner.set_data(key, value)
+            except Exception:  # noqa: BLE001 — fall back to the OTel-style name
                 try:
-                    self.inner.set_data(key, value)
+                    self.inner.set_attribute(key, value)
                 except Exception:  # noqa: BLE001
                     pass
         self.attrs[key] = value
@@ -142,9 +142,42 @@ def _start(op: str, name: str, agent: bool = True) -> Span:
     if not enabled():
         return Span()
     try:
-        inner = _sentry.start_span(op=op, name=name)
-        if agent:
-            inner.set_attribute("gen_ai.agent.name", AGENT_NAME)
+        get_current = getattr(_sentry, "get_current_span", None)
+        current = get_current() if callable(get_current) else None
+        if current is None and hasattr(_sentry, "start_transaction"):
+            inner = _sentry.start_transaction(op=op, name=name)
+        else:
+            inner = _sentry.start_span(op=op, name=name)
+        setter = getattr(inner, "set_data", None) or getattr(inner, "set_attribute", None)
+        if setter is not None:
+            if agent:
+                setter("gen_ai.agent.name", AGENT_NAME)
+            if op == "gen_ai.invoke_agent":
+                setter("gen_ai.operation.name", "invoke_agent")
+            elif op == "gen_ai.chat":
+                setter("gen_ai.operation.name", "chat")
+            elif op == "gen_ai.execute_tool":
+                setter("gen_ai.operation.name", "execute_tool")
+        enter = getattr(inner, "__enter__", None)
+        if callable(enter):
+            enter()
+        return Span(inner=inner)
+    except Exception:  # noqa: BLE001 — tracing must never break the ask
+        return Span()
+
+
+    try:
+        # A span with no active parent becomes the trace's root transaction,
+        # so the agent run (and any standalone model call) is actually sent.
+        if _sentry.get_current_span() is None:
+            inner = _sentry.start_transaction(op=op, name=name)
+        else:
+            inner = _sentry.start_span(op=op, name=name)
+        if agent and op != "gen_ai.invoke_agent":
+            inner.set_data("gen_ai.agent.name", AGENT_NAME)
+        if op == "gen_ai.invoke_agent":
+            inner.set_data("gen_ai.agent.name", AGENT_NAME)
+        inner.__enter__()  # make it the active parent for nested spans
         return Span(inner=inner)
     except Exception:  # noqa: BLE001 — tracing must never break the ask
         return Span()

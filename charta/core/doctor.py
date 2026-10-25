@@ -144,6 +144,15 @@ def run_checks(cfg: AppConfig | None = None, *, ping: bool = True) -> list[Check
                         "optional: PyMuPDF (PDF text), python-docx, faster-whisper (voice)",
                         required=False))
 
+    sentry_sdk = _module("sentry_sdk")
+    sentry_dsn = bool(getattr(cfg, "sentry_dsn", ""))
+    checks.append(Check("sentry-tracing", sentry_sdk or not sentry_dsn,
+                        (f"sentry-sdk {'installed' if sentry_sdk else 'missing'}; "
+                         f"DSN {'configured' if sentry_dsn else 'not set (tracing off)'}"),
+                        ("" if sentry_sdk or not sentry_dsn
+                         else "pip install sentry-sdk>=2.60 (or charta install extra .[sentry])"),
+                        required=False))
+
     guard_ok = is_protected("C:\\Windows") and not is_protected(str(pathlib.Path.home() / "Documents"))
     checks.append(Check("safety-guard", guard_ok, "protected-path refusal + sensitive scan active",
                         "" if guard_ok else "paths.py guard is not behaving — do not move files"))

@@ -64,8 +64,17 @@ class FakeSpan:
     def set_attribute(self, key: str, value: object) -> None:
         self.attrs[key] = value
 
+    def set_data(self, key: str, value: object) -> None:
+        self.attrs[key] = value
+
     def set_status(self, status: str) -> None:
         self.status = status
+
+    def __enter__(self) -> "FakeSpan":
+        return self
+
+    def __exit__(self, *a: object) -> None:
+        pass
 
 
 class FakeSentry:
@@ -73,10 +82,16 @@ class FakeSentry:
         self.init_calls: list[dict] = []
         self.spans: list[FakeSpan] = []
 
+    def get_current_span(self) -> None:
+        return None
+
     def init(self, **kwargs) -> None:
         self.init_calls.append(kwargs)
 
     def start_span(self, op: str, name: str = "") -> FakeSpan:
+        return FakeSpan(self.spans, op, name)
+
+    def start_transaction(self, op: str, name: str = "") -> FakeSpan:
         return FakeSpan(self.spans, op, name)
 
     def flush(self, timeout: float = 0) -> None:

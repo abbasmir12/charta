@@ -48,6 +48,26 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-25: **README refreshed to the shipped state.** The page now leads
+  with the drop-and-index story (file read once → row in `.charta/index.db` →
+  questions answered from the index, not the pile), embeds the demo video
+  thumbnail + link, adds a five-step "How it works" and a "Safety by default"
+  section, fixes the provider table (`vllm` is :8000, `llamacpp` is :8080, split
+  into their own rows) and replaces the stale "does NOT work yet" list with an
+  honest "Known limits" (learned rules/digest/deadline not built, watcher only
+  sees arrivals, Windows visual pass ongoing, ElevenLabs opt-in, vision quality
+  model-bound, lexical retrieval). Performance numbers regenerated: 287 pytest
+  in 22 s, 9 Electron unit tests, 36 measured web screens. Files: `README.md`.
+  Verified: `pytest -q` 287 passed; `npm test` 9 passed; `tools/ui_check.py`
+  "OK — 36 screens verified" with no console errors. Commit: "
+- 2026-10-25: **UI screenshot baseline regenerated for the new routes.**
+  `tools/ui_check.py` now covers 12 routes, but `docs/screenshots/` still held
+  the 9-route set, so `files`, `folders` and `history` had no image. Re-ran the
+  measured check: 36 screens (12 routes × 1280 dark/light + 900 narrow), all
+  passing, 9 new PNGs added and 27 refreshed. `npm run smoke` could not run here
+  (no X display), so the Electron claim stays manual. Files:
+  `docs/screenshots/*`. Verified: `tools/ui_check.py` → "OK — 36 screens
+  verified". Commit: "
 - 2026-10-25: **DEVPOST trimmed per submission pass.** Removed the
   "My Agent Session" section (and the day-list-style commentary it carried),
   reduced Demo to the embedded video plus one caption explaining what it

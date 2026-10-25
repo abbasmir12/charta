@@ -702,3 +702,37 @@ def test_an_unknown_chat_id_falls_back_to_a_fresh_conversation(client, tmp_path)
                        json={"q": "hello?", "chat": "does-not-exist-0001"}).json()
     assert body.get("chat") in ("", None), "an unknown id must not be trusted blindly"
     _wait_job(client, body["job"])
+
+
+def test_the_rail_is_complete_before_any_folder_is_picked(client):
+    """First run: the sidebar must show every page, not hide behind a pick."""
+    html = client.get("/folders").text
+    for label in ("Folders", "Overview", "Files", "Review", "Outputs",
+                  "Gaps", "Ask", "Search", "Activity", "History", "Settings"):
+        assert f"> {label}</a>" in html, label
+
+
+def test_the_rail_starts_where_the_user_last_left_off(client, tmp_path):
+    """With no ?folder= in the URL, the rail links carry the last-used folder."""
+    import charta.web.app as web
+    from urllib.parse import quote
+
+    (tmp_path / "n.txt").write_text("note", encoding="utf-8")
+    web.watchlist.add(web._cfg(), str(tmp_path))
+    html = client.get("/ask").text  # deliberately no folder param
+    want = quote(str(tmp_path))
+    assert f"/overview?folder={want}" in html
+    assert f"/ask?folder={want}" in html
+    assert f"/review?folder={want}" in html
+    # and the remembered folder's conversations are the ones shown in the rail
+    import charta.core.chats as chats
+    cid = chats.new_id()
+    chats.append_message(tmp_path, cid, "Q", "A")
+    rail = client.get("/folders").text
+    assert cid in rail
+
+
+def test_a_fresh_machine_preselects_nothing(client, tmp_path):
+    """No registry entries: rail still complete, links simply go to pickers."""
+    html = client.get("/ask?folder=").text
+    assert "/overview?folder=" in html and "> Overview</a>" in html

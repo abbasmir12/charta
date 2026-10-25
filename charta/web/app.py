@@ -222,12 +222,35 @@ def _basename(folder: str) -> str:
     return pathlib.PurePath(folder.replace("\\", "/")).name or folder
 
 
+def _remembered_folder(cfg: AppConfig) -> str:
+    """The folder the user last worked with, best effort.
+
+    The rail must show the same full set of pages on first launch as it does
+    after a day's work: when the URL carries no folder, the remembered one is
+    the honest default (the pages themselves still explain what a pick means).
+    """
+    try:
+        entries = watchlist.known(cfg)
+    except Exception:  # noqa: BLE001 - a broken registry must not break the shell
+        return ""
+
+    def stamp(e: dict) -> str:
+        return max(e.get("last_scan") or "", e.get("added_at") or "")
+
+    live = [e for e in entries if e.get("watching", True)] or entries
+    if not live:
+        return ""
+    newest = sorted(live, key=stamp, reverse=True)
+    return str(newest[0].get("folder", "") or "")
+
+
 def _nav(items: list[str], page: str, fq: str) -> str:
-    """The rail. Folder pages are only offered when a folder is chosen."""
+    """The rail. Always complete: folder pages without a chosen folder land on
+    their own "pick a folder" state, so the sidebar never half-disappears on a
+    first run (it used to show only Folders + Search until a query param
+    happened to carry a folder — the reason navigation looked to grow)."""
     out = []
     for n in items:
-        if n not in ("folders", "search") and not fq:
-            continue  # nothing to show yet — the Folders page picks one
         out.append(
             f'<a href="/{n}?folder={fq}" class="{"active" if page == n else ""}"'
             f'{" aria-current=\"page\"" if page == n else ""}>'
@@ -241,6 +264,11 @@ def shell(page: str, folder: str, inner: str, mode: str = "suggest", label: str 
     The same markup is an ordinary header in a browser and the draggable window
     title bar inside Electron (desktop/preload.js sets data-shell).
     """
+    # The rail (and everything it links) works from the folder in the URL; on
+    # the very first screens (no ?folder= yet) it starts where the user last
+    # left off, so navigation looks the same from minute one — never a
+    # half-empty sidebar that "grows" after a first click.
+    folder = folder or _remembered_folder(_cfg())
     fq = quote(folder)  # folder paths contain spaces, & and backslashes
     name = _basename(folder)
     here = label or NAV_LABELS.get(page) or (page.title() if page else "New charter")

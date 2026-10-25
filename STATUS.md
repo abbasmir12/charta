@@ -48,6 +48,19 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-25: **the rail is complete from the very first launch.** The nav
+  used to skip every folder-dependent page (Overview/Files/Review/Outputs/
+  Gaps/Ask/Activity/History) whenever the URL carried no `folder=` param, so
+  a fresh start showed only Folders + Search and the options "suddenly
+  appeared" after a first click. `_nav` now always renders the full set
+  (each page already has a calm "pick a folder" state), and the shell falls
+  back to the last-used folder (`_remembered_folder`: watching entries first,
+  newest `last_scan`/`added_at`) so nav, crumb and rail conversations start
+  where the user left off. Tests: rail-complete, remembered-folder, fresh-
+  machine. Files: `charta/web/app.py`, `tests/test_web_ui.py`.
+  Verified: `pytest -q` 277 passed; `tools/ui_check.py` 36 screens (setup
+  screenshot shows the full rail). Commit: dd1b124
+
 - 2026-10-25: **the voice wave, properly this time: push-to-talk popup,
   real STT providers, and a full Settings UI that writes config.toml.**
   The last wave shipped a popup that called `window.__recordAudio` — a

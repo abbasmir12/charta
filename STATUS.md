@@ -48,6 +48,17 @@ pass and a recorded before/after demo.
 
 ## Done Log
 
+- 2026-10-27: **README rewritten as a normal public README.** Removed the
+  status-tracking sections entirely ("What works today", "Known limits",
+  "Performance (measured on this machine)", the Screenshots baseline section)
+  so the page reads like a standard open-source README: what Charta is, the
+  demo video embed/link, the five-step "How it works", a curated Features
+  list, Quickstart, the no-model demo, Configuration (config.toml + provider
+  table + env keys), Safety by default, the Electron shell, project layout and
+  doc links. No license claimed (the repo has no LICENSE file). STATUS.md
+  remains the home for progress tracking.
+  Files touched: README.md. Verified: no status sections left (grep), all
+  commands/config table copied from the shipped code. Commit: 4539522
 - 2026-10-25: **README refreshed to the shipped state.** The page now leads
   with the drop-and-index story (file read once → row in `.charta/index.db` →
   questions answered from the index, not the pile), embeds the demo video
